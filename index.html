@@ -661,9 +661,7 @@ table.cand-tbl th:nth-child(7),table.cand-tbl td:nth-child(7){width:38px;text-al
   <div style="flex:1"></div>
   <button class="btn-sm" id="btn-import-sep" onclick="triggerJSONImport()">JSON読込</button>
   <input type="file" id="json-file-input" accept=".json" style="display:none" onchange="importJSONFile(this)">
-  <button class="btn-sm btn-green" id="btn-json-dl" onclick="downloadJSON()">JSONとしてDL</button>
-  <button class="btn-sm btn-green" id="btn-image" onclick="saveAsImage()">画像としてDL</button>
-  <button class="btn-sm btn-green" id="btn-save" onclick="saveToSupabase()" style="display:none">保存</button>
+  <button class="btn-sm btn-green" id="btn-save" onclick="saveToSupabase()">シミュレーション保存</button>
 </div>
 
 <div id="empty-banner">
@@ -1038,7 +1036,8 @@ table.cand-tbl th:nth-child(7),table.cand-tbl td:nth-child(7){width:38px;text-al
     <div class="modal-url" id="modal-url-text"></div>
     <div class="modal-actions">
       <button class="btn-modal btn-copy" onclick="copyModalURL()">URLをコピー</button>
-      <button class="btn-modal btn-modal-green" onclick="saveAsImage()">画像としてDL</button>
+      <button class="btn-modal btn-modal-green" onclick="downloadJSON()">JSON DL</button>
+      <button class="btn-modal btn-modal-green" id="btn-image-modal" onclick="saveAsImage()">画像としてDL</button>
       <button class="btn-modal btn-x" onclick="shareOnX()">𝕏 で共有</button>
       <button class="btn-modal btn-close" onclick="closeModal()">閉じる</button>
     </div>
@@ -2027,8 +2026,8 @@ function fallbackCopy(text,cb){
 // Image export
 // ============================================================
 async function saveAsImage(){
-  const btn=document.getElementById('btn-image');
-  btn.textContent='...'; btn.disabled=true;
+  const btn=document.getElementById('btn-image-modal');
+  if(btn){btn.textContent='...'; btn.disabled=true;}
   const origZoom=document.body.style.zoom;
   try{
     const opts={backgroundColor:'#08080f',scale:3,useCORS:true,logging:false};
@@ -2056,8 +2055,8 @@ async function saveAsImage(){
     // -- Right pane clone: 編集ブロック非表示・統計情報等フル表示 --
     const rpaneOrig=document.getElementById('rpane-body');
     const rpaneClone=rpaneOrig.cloneNode(true);
-    // 編集ブロック・CHANGES・トグル非表示
-    rpaneClone.querySelectorAll('.mode-row,.sr-section-changes,#sim-color-toggle-row').forEach(el=>el.style.display='none');
+    // 編集ブロック・CHANGES・トグル・ペンディングリスト非表示
+    rpaneClone.querySelectorAll('.mode-row,.sr-section-changes,#sim-color-toggle-row,.sim-pending-list').forEach(el=>el.style.display='none');
     ['form-new','form-update','new-entries-list','update-entries-list','delete-entries-list','target-section','sim-changes','form-candidate','mob-stats','mob-rpane-close'].forEach(id=>{
       const el=rpaneClone.querySelector('#'+id);
       if(el)el.style.display='none';
@@ -2159,7 +2158,7 @@ async function saveAsImage(){
     document.body.style.zoom=origZoom;
     alert('画像化失敗: '+e.message);
   }
-  btn.textContent='画像としてDL'; btn.disabled=false;
+  if(btn){btn.textContent='画像としてDL'; btn.disabled=false;}
 }
 
 // ============================================================
@@ -2177,12 +2176,12 @@ function initSupabase(){
 }
 function updateSaveBtnLabel(){
   const btn=document.getElementById('btn-save');
-  if(!btn||btn.style.display==='none')return;
-  btn.textContent='シミュレーションを保存';
+  if(!btn)return;
+  btn.textContent='シミュレーション保存';
 }
 function updateActionButtons(){
   const isEmpty=CATS.every(c=>skillData[c].length===0);
-  ['btn-image','btn-json-dl','btn-save'].forEach(id=>{
+  ['btn-save'].forEach(id=>{
     const el=document.getElementById(id);
     if(el){ el.disabled=isEmpty; el.style.opacity=isEmpty?'0.35':''; }
   });
