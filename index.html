@@ -2243,6 +2243,8 @@ async function saveToSupabase(){
     document.getElementById('import-status').textContent='✓ saved';
     setUUIDDisplay(data.uuid);
     simDirty=false;
+    if(typeof DISCORD_WEBHOOK_NEWINSERT!=='undefined')
+      fetch(DISCORD_WEBHOOK_NEWINSERT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:`新しいシミュレーションが保存されました\n${location.origin}${location.pathname}?id=${data.uuid}`})}).catch(()=>{});
     showModal(data.uuid);
   }
   btn.disabled=false;

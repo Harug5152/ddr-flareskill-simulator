@@ -28,6 +28,7 @@ jobs:
           cat > config.js <<EOF
           const SUPABASE_URL = '${{ secrets.SUPABASE_URL }}';
           const SUPABASE_ANON_KEY = '${{ secrets.SUPABASE_ANON_KEY }}';
+          const DISCORD_WEBHOOK_NEWINSERT = '${{ secrets.DISCORD_WEBHOOK_NEWINSERT }}';
           EOF
 
       - uses: actions/configure-pages@v5
