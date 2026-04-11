@@ -1978,13 +1978,16 @@ function showModal(uuid){
 function closeModal(){ document.getElementById('uuid-modal').classList.remove('on'); }
 function shareOnX(){
   const url=document.getElementById('modal-url-text').textContent;
-  const total=document.getElementById('hd-total-val').textContent;
-  const rank=document.getElementById('hd-rank-val').textContent;
   const comment=simComment.trim();
-  // styleはロード済みデータ or 新規エントリの先頭から判定
   const allEntries=[...CATS.flatMap(c=>skillData[c]),...simNewEntries];
   const style=allEntries.length>0?(allEntries[0].style||'SP'):'SP';
-  const base=`DDR ${style} フレアスキル: ${total} (${rank}) のシミュレーション #DDR_FLARESIM`;
+  const baseVal=grandTotal(skillData);
+  const simVal=grandTotal(buildSimData());
+  const diff=simVal-baseVal;
+  const diffStr=(diff>=0?'+':'')+diff.toLocaleString();
+  let base=`DDR ${style} フレアスキルシミュレーション：${baseVal.toLocaleString()} → ${simVal.toLocaleString()} (${diffStr})`;
+  if(targetSkill!=null) base+=` [目標：${targetSkill.toLocaleString()}]`;
+  base+=` #DDR_FLARESIM`;
   // X: CJK文字は2カウント、URLは23固定。上限280
   const xLen=s=>[...s].reduce((n,c)=>n+(/[\u3000-\u9fff\uff00-\uffef]/.test(c)?2:1),0);
   const urlCount=23;
