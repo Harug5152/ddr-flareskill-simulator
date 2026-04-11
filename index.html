@@ -1261,7 +1261,7 @@ function renderHeader(){
   const next=getNextRank(total);
   const hdTotal=document.getElementById('hd-total-val');
   const hdRank=document.getElementById('hd-rank-val');
-  hdTotal.textContent=total.toLocaleString();
+  hdTotal.textContent=loadedBaseTotal!=null?`${loadedBaseTotal.toLocaleString()} → ${total.toLocaleString()}`:total.toLocaleString();
   hdRank.textContent=fmtRank(rank);
   const hrs=getTargetRankStyle(total);
   hdTotal.style.cssText=hrs.headerValStyle||hrs.valStyle;
@@ -1279,7 +1279,7 @@ function renderHeader(){
   const mRank =document.getElementById('mob-hd-rank-val');
   const mNext =document.getElementById('mob-hd-next-val');
   const mNextL=document.getElementById('mob-hd-next-lbl');
-  if(mTotal) mTotal.textContent=total.toLocaleString();
+  if(mTotal) mTotal.textContent=loadedBaseTotal!=null?`${loadedBaseTotal.toLocaleString()} → ${total.toLocaleString()}`:total.toLocaleString();
   if(mRank)  mRank.textContent=fmtRank(rank);
   if(mNext&&mNextL){
     if(targetSkill){ const d=targetSkill-total; if(d<=0){mNext.textContent='✓';mNextL.textContent='目標達成！';}else{mNext.textContent=d.toLocaleString();mNextL.textContent='→ 目標';} }
@@ -1781,7 +1781,7 @@ function selectRowForUpdate(cat, entryId){
 }
 
 function resetSim(){
-  simNewEntries=[];simUpdateEntries=[];simDeleteEntries=[];editingNewId=null;simDirty=false;
+  simNewEntries=[];simUpdateEntries=[];simDeleteEntries=[];editingNewId=null;simDirty=false;loadedBaseTotal=null;
   if(!CATS.some(c=>skillData[c].length>0)){ sessionStyleLocked=false; renderStyleUI(); }
   simComment=''; noteEdits={}; currentNoteId=null;
   const ca=document.getElementById('sim-comment-area');
@@ -1981,7 +1981,7 @@ function shareOnX(){
   const comment=simComment.trim();
   const allEntries=[...CATS.flatMap(c=>skillData[c]),...simNewEntries];
   const style=allEntries.length>0?(allEntries[0].style||'SP'):'SP';
-  const baseVal=grandTotal(skillData);
+  const baseVal=loadedBaseTotal??grandTotal(skillData);
   const simVal=grandTotal(buildSimData());
   const diff=simVal-baseVal;
   const diffStr=(diff>=0?'+':'')+diff.toLocaleString();
@@ -2167,7 +2167,7 @@ async function saveAsImage(){
 // ============================================================
 // Supabase
 // ============================================================
-let supabaseClient=null,currentUUID=null;
+let supabaseClient=null,currentUUID=null,loadedBaseTotal=null;
 function setStatus(msg,isError=false){
   const el=document.getElementById('import-status');
   el.textContent=msg;
@@ -2197,6 +2197,7 @@ async function loadFromSupabase(uuid){
   const loaded=data.data;
   candidateEntries=loaded._candidates||[];
   skillData={CLASSIC:loaded.CLASSIC||[],WHITE:loaded.WHITE||[],GOLD:loaded.GOLD||[]};
+  loadedBaseTotal=loaded._baseTotal??null;
   targetSkill=loaded._targetSkill??null;
   const tEl=document.getElementById('target-val');
   if(tEl) tEl.value=targetSkill!=null?targetSkill:'';
@@ -2234,6 +2235,7 @@ async function saveToSupabase(){
   if(savedCandidates.length>0) saveData._candidates=savedCandidates;
   if(targetSkill!=null) saveData._targetSkill=targetSkill;
   if(simComment) saveData._comment=simComment;
+  saveData._baseTotal=loadedBaseTotal??grandTotal(skillData);
   const{data,error}=await supabaseClient.from('skill_data')
     .insert({data:saveData}).select('uuid').single();
   if(error||!data){alert('保存失敗: '+(error?.message||'不明'));}
@@ -2294,6 +2296,7 @@ function downloadJSON(){
     exported_at:new Date().toISOString(),
     uuid:currentUUID||null,
     skillData:JSON.parse(JSON.stringify(skillData)),
+    _baseTotal:loadedBaseTotal,
     candidateEntries:JSON.parse(JSON.stringify(candidateEntries)),
     noteEdits:JSON.parse(JSON.stringify(noteEdits)),
   };
@@ -2318,6 +2321,7 @@ function importJSONFile(input){
       const detected=detectStyleFromData(skillData);
       sessionStyle=detected||'SP'; sessionStyleLocked=!!detected;
       renderStyleUI();
+      loadedBaseTotal=d._baseTotal??null;
       candidateEntries=d.candidateEntries||[];
       noteEdits=d.noteEdits||{};
       simNewEntries=[];simUpdateEntries=[];simDeleteEntries=[];
