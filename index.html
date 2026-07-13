@@ -310,12 +310,12 @@ table.stats-tbl td.sv-dlt.pos { color: #48d898; }
 table.stats-tbl td.sv-dlt.neg { color: #d84848; }
 
 /* ── Modals ── */
-#uuid-modal, #ttl-modal, #help-modal {
+#uuid-modal, #ttl-modal, #help-modal, #save-parent-modal {
   display: none; position: fixed; inset: 0;
   background: rgba(0,0,0,0.75); z-index: 100;
   align-items: center; justify-content: center;
 }
-#uuid-modal.on, #ttl-modal.on, #help-modal.on { display: flex; }
+#uuid-modal.on, #ttl-modal.on, #help-modal.on, #save-parent-modal.on { display: flex; }
 .modal-box.help-modal-box { width: min(920px, 62vw); max-height: 82vh; display:flex; flex-direction:column; text-align:left; }
 .help-content { overflow-y: auto; flex: 1; padding-right: 6px; margin-bottom: 16px; text-align: left; }
 .help-content::-webkit-scrollbar { width: 4px; }
@@ -642,26 +642,13 @@ table.cand-tbl th:nth-child(7),table.cand-tbl td:nth-child(7){width:38px;text-al
   background: var(--tp-bg-1); border: 1px solid var(--tp-border-1);
   border-radius: 5px; padding: 8px 10px; margin-bottom: 10px;
 }
-.parent-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; }
+.parent-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
 .parent-label { font-size: 10px; color: var(--tp-text-3); letter-spacing: 1.5px; }
-.parent-link { font-size: 10px; color: var(--tp-accent); text-decoration: none; font-family: monospace; cursor: pointer; }
+.parent-label #parent-count { color: var(--tp-text-2); font-weight: 700; }
+.parent-curr { font-size: 11px; color: var(--tp-text-2); font-family: monospace; }
+.parent-link { color: var(--tp-accent); text-decoration: none; font-family: monospace; cursor: pointer; }
 .parent-link:hover { text-decoration: underline; }
-.parent-comment {
-  font-size: 11px; color: var(--tp-text-2); line-height: 1.5; margin-bottom: 6px;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-  white-space: pre-wrap; word-break: break-word;
-}
-.parent-comment:empty { display: none; }
-.parent-totals {
-  font-size: 12px; color: var(--tp-text-2);
-  display: flex; justify-content: space-between; gap: 6px;
-  padding: 5px 0; border-top: 1px solid var(--tp-border-2);
-}
-.parent-totals span { white-space: nowrap; }
-.parent-totals .p-delta.pos { color: var(--tp-positive); font-weight: 700; }
-.parent-totals .p-delta.neg { color: var(--tp-negative); font-weight: 700; }
-.parent-totals .p-delta.zer { color: var(--tp-text-muted); }
-.parent-achievement { padding: 5px 0; border-top: 1px solid var(--tp-border-2); }
+.parent-achievement { padding: 5px 0; border-top: 1px solid var(--tp-border-2); margin-top: 4px; }
 .parent-ach-summary { display: flex; gap: 12px; justify-content: center; font-size: 11px; margin-bottom: 4px; }
 .parent-ach-summary .ach { color: var(--tp-positive); font-weight: 700; }
 .parent-ach-summary .unach { color: var(--tp-warn); font-weight: 700; }
@@ -676,15 +663,22 @@ table.cand-tbl th:nth-child(7),table.cand-tbl td:nth-child(7){width:38px;text-al
 .parent-ach-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .parent-ach-item .info { flex-shrink: 0; font-size: 10px; color: var(--tp-text-3); }
 .parent-ach-empty { text-align: center; font-size: 10px; color: var(--tp-text-muted); padding: 4px 0; }
+.parent-ach-head { font-size: 10px; color: var(--tp-text-3); letter-spacing: 0.5px; margin-bottom: 3px; }
 
-#parent-link-option {
-  font-size: 11px; color: var(--tp-text-3); margin-bottom: 8px;
-  padding: 6px 8px; background: var(--tp-bg-1); border: 1px solid var(--tp-border-2);
-  border-radius: 4px;
+/* Parent chain tree */
+.parent-tree { margin-bottom: 4px; }
+.parent-tree-item {
+  display: flex; gap: 5px; align-items: center;
+  padding: 3px 0; font-size: 11px; line-height: 1.4;
 }
-#parent-link-option label { cursor: pointer; display: flex; align-items: center; gap: 6px; line-height: 1.4; }
-#parent-link-option input[type="checkbox"] { accent-color: var(--tp-accent); cursor: pointer; margin: 0; }
-.parent-link-src { font-family: monospace; color: var(--tp-accent); }
+.parent-tree-item .tree-branch { color: var(--tp-text-muted); font-family: monospace; width: 10px; flex-shrink: 0; }
+.parent-tree-item .tree-level { color: var(--tp-text-3); font-size: 10px; flex-shrink: 0; }
+.parent-tree-item .parent-link { flex-shrink: 0; }
+.parent-tree-item .parent-comm { flex: 1; color: var(--tp-text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-style: italic; }
+.parent-tree-item .parent-delta { flex-shrink: 0; font-weight: 700; font-family: monospace; font-size: 11px; }
+.parent-tree-item .parent-delta.pos { color: var(--tp-positive); }
+.parent-tree-item .parent-delta.neg { color: var(--tp-negative); }
+.parent-tree-item .parent-delta.zer { color: var(--tp-text-muted); }
 
 /* Token-driven surface overrides (later in cascade → beats the legacy hex rules above) */
 body { background: var(--tp-bg-0); color: var(--tp-text-1); }
@@ -1121,19 +1115,11 @@ table.stats-tbl td.sv-dlt.neg { color: var(--tp-negative); }
 
       <div id="parent-section" style="display:none">
         <div class="parent-head">
-          <span class="parent-label">参考元</span>
-          <a class="parent-link" id="parent-link" target="_blank" rel="noopener"></a>
+          <span class="parent-label">参考元 (<span id="parent-count">0</span>世代)</span>
+          <span class="parent-curr" id="parent-curr"></span>
         </div>
-        <div class="parent-comment" id="parent-comment"></div>
-        <div class="parent-totals" id="parent-totals"></div>
+        <div class="parent-tree" id="parent-tree"></div>
         <div class="parent-achievement" id="parent-achievement"></div>
-      </div>
-
-      <div id="parent-link-option" style="display:none">
-        <label>
-          <input type="checkbox" id="chk-parent-link" checked>
-          <span>参考元 <span id="parent-link-src" class="parent-link-src"></span> として保存</span>
-        </label>
       </div>
 
       <div id="sim-comment-section">
@@ -1296,6 +1282,19 @@ table.stats-tbl td.sv-dlt.neg { color: var(--tp-negative); }
 </div>
 
 
+<!-- Save Parent Confirmation Modal -->
+<div id="save-parent-modal">
+  <div class="modal-box">
+    <h2>保存方法を選択</h2>
+    <p>現在のSim <span id="save-modal-parent-short" style="font-family:monospace;color:var(--tp-accent);"></span> を参考元にすると、進捗や差分を追跡できます (最大3世代)。</p>
+    <div class="modal-actions">
+      <button class="btn-modal btn-modal-green" onclick="closeSaveParentModal();saveToSupabase(true)">参考元として保存</button>
+      <button class="btn-modal btn-copy" onclick="closeSaveParentModal();saveToSupabase(false)">独立して保存</button>
+      <button class="btn-modal btn-close" onclick="closeSaveParentModal()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <!-- UUID Modal -->
 <div id="uuid-modal">
   <div class="modal-box">
@@ -1379,8 +1378,9 @@ let currentNoteId    = null;
 let candidateEntries = [];   // [{id,cat,name,diff,level,rankIdx,fs,tier}]
 let editingCandId    = null;
 let targetSkill      = null;
-let parentSim        = null; // {uuid, data} 参考元Sim（ロード時に取得）
+let parentChain      = []; // [{uuid,data}] 参考元Simチェーン (index 0 = 直近親, 最大3世代)
 let parentAchOpen    = false;
+const PARENT_CHAIN_MAX = 3;
 
 // ============================================================
 // Core helpers
@@ -2081,13 +2081,28 @@ function onCommentInput(el){
 // ============================================================
 // Parent Sim (参考元) - Issue #2 差分・追跡機能
 // ============================================================
-function renderParentLinkOption(){
-  const opt=document.getElementById('parent-link-option');
-  if(!opt) return;
-  if(!currentUUID){ opt.style.display='none'; return; }
-  opt.style.display='';
-  const srcEl=document.getElementById('parent-link-src');
-  if(srcEl) srcEl.textContent=currentUUID.slice(0,8)+'…';
+async function fetchParentChain(startUuid){
+  const chain=[];
+  let cursor=startUuid;
+  const seen=new Set();
+  while(cursor && chain.length<PARENT_CHAIN_MAX && !seen.has(cursor)){
+    seen.add(cursor);
+    try{
+      const r=await supabaseClient.from('skill_data').select('data,updated_at').eq('uuid',cursor).single();
+      if(!r.data)break;
+      chain.push({uuid:cursor,data:r.data.data,updated_at:r.data.updated_at});
+      cursor=r.data.data && r.data.data._parentUuid;
+    }catch(e){break;}
+  }
+  return chain;
+}
+function openSaveParentModal(){
+  const el=document.getElementById('save-modal-parent-short');
+  if(el) el.textContent=(currentUUID||'').slice(0,8)+'…';
+  document.getElementById('save-parent-modal').classList.add('on');
+}
+function closeSaveParentModal(){
+  document.getElementById('save-parent-modal').classList.remove('on');
 }
 function toggleParentAchList(){
   parentAchOpen=!parentAchOpen;
@@ -2099,33 +2114,37 @@ function toggleParentAchList(){
 function renderParentSection(){
   const sec=document.getElementById('parent-section');
   if(!sec) return;
-  if(!parentSim){ sec.style.display='none'; return; }
+  if(!parentChain.length){ sec.style.display='none'; return; }
   sec.style.display='';
-  const pdata=parentSim.data||{};
-  // Link
-  const link=document.getElementById('parent-link');
-  link.textContent=parentSim.uuid.slice(0,8)+'…';
-  link.href=location.pathname+'?id='+parentSim.uuid;
-  link.title=parentSim.uuid;
-  // Comment
-  const commEl=document.getElementById('parent-comment');
-  const comm=pdata._comment||'';
-  commEl.textContent=comm;
-  commEl.title=comm;
-  // Totals
-  const parentBase={CLASSIC:pdata.CLASSIC||[],WHITE:pdata.WHITE||[],GOLD:pdata.GOLD||[]};
-  const parentTotal=grandTotal(parentBase);
   const currTotal=grandTotal(skillData);
-  const dTot=currTotal-parentTotal;
-  const cls=dTot>0?'pos':dTot<0?'neg':'zer';
-  document.getElementById('parent-totals').innerHTML=
-    `<span>親: ${parentTotal.toLocaleString()}</span>`+
-    `<span>現: ${currTotal.toLocaleString()}</span>`+
-    `<span class="p-delta ${cls}">${dTot>0?'+':''}${dTot.toLocaleString()}</span>`;
-  // 計画達成状況: 親の _sim='new' or _sim='mod' エントリを現baselineに照合
+  document.getElementById('parent-count').textContent=parentChain.length;
+  document.getElementById('parent-curr').textContent='現: '+currTotal.toLocaleString();
+  // Tree items
+  const treeHtml=parentChain.map((p,i)=>{
+    const pd=p.data||{};
+    const pbase={CLASSIC:pd.CLASSIC||[],WHITE:pd.WHITE||[],GOLD:pd.GOLD||[]};
+    const pTotal=grandTotal(pbase);
+    const dTot=currTotal-pTotal;
+    const cls=dTot>0?'pos':dTot<0?'neg':'zer';
+    const branch=(i===parentChain.length-1)?'└':'├';
+    const shortUuid=p.uuid.slice(0,8)+'…';
+    const comment=pd._comment||'';
+    const excerpt=comment?'"'+comment.slice(0,24)+(comment.length>24?'…':'')+'"':'';
+    return `<div class="parent-tree-item">`+
+      `<span class="tree-branch">${branch}</span>`+
+      `<span class="tree-level">[${i+1}]</span>`+
+      `<a class="parent-link" href="?id=${encodeURIComponent(p.uuid)}" target="_blank" rel="noopener" title="${esc(p.uuid)}">${shortUuid}</a>`+
+      `<span class="parent-comm" title="${esc(comment)}">${esc(excerpt)}</span>`+
+      `<span class="parent-delta ${cls}">${dTot>=0?'+':''}${dTot.toLocaleString()}</span>`+
+      `</div>`;
+  }).join('');
+  document.getElementById('parent-tree').innerHTML=treeHtml;
+  // 計画達成状況: 直近親 [1] のみを対象
+  const closest=parentChain[0];
+  const cbase={CLASSIC:closest.data.CLASSIC||[],WHITE:closest.data.WHITE||[],GOLD:closest.data.GOLD||[]};
   const plans=[];
   for(const cat of CATS){
-    for(const e of (parentBase[cat]||[])){
+    for(const e of (cbase[cat]||[])){
       if(e._sim==='new'||e._sim==='mod'){
         plans.push({...e,cat});
       }
@@ -2133,7 +2152,7 @@ function renderParentSection(){
   }
   const achEl=document.getElementById('parent-achievement');
   if(plans.length===0){
-    achEl.innerHTML='<div class="parent-ach-empty">親に計画エントリなし</div>';
+    achEl.innerHTML='<div class="parent-ach-empty">直近親 [1] に計画エントリなし</div>';
     return;
   }
   const results=plans.map(p=>{
@@ -2153,6 +2172,7 @@ function renderParentSection(){
       `<span class="info">${info}</span></div>`;
   }).join('');
   achEl.innerHTML=
+    `<div class="parent-ach-head">直近親 [1] の計画達成状況</div>`+
     `<div class="parent-ach-summary"><span class="ach">✓ ${done}</span><span class="unach">△ ${todo}</span></div>`+
     `<div class="parent-ach-toggle" onclick="toggleParentAchList()">${parentAchOpen?'▲ 閉じる':'▼ 詳細'}</div>`+
     `<div class="parent-ach-list${parentAchOpen?' open':''}" id="parent-ach-list">${listHtml}</div>`;
@@ -2577,19 +2597,17 @@ async function loadFromSupabase(uuid){
   updateSaveBtnLabel();
   if(data.last_accessed) checkTTL(data.last_accessed);
   simDirty=false;
-  // 参考元Sim (親) を fetch
-  parentSim=null;
-  const parentUuid=loaded._parentUuid;
-  if(parentUuid){
-    try{
-      const pr=await supabaseClient.from('skill_data').select('data,updated_at').eq('uuid',parentUuid).single();
-      if(pr.data) parentSim={uuid:parentUuid,data:pr.data.data,updated_at:pr.data.updated_at};
-    }catch(e){}
-  }
-  refreshUpdateSongs();renderParentLinkOption();renderParentSection();render();
+  // 参考元Simチェーンを最大PARENT_CHAIN_MAX世代辿る
+  parentChain=await fetchParentChain(loaded._parentUuid);
+  refreshUpdateSongs();renderParentSection();render();
   Promise.resolve(supabaseClient.rpc('touch_last_accessed',{record_uuid:uuid})).catch(()=>{});
 }
-async function saveToSupabase(){
+async function saveToSupabase(useParent){
+  // btn-save から引数なしで呼ばれ、かつ ?id ロード中なら 保存モーダルで選択
+  if(useParent===undefined){
+    if(currentUUID){ openSaveParentModal(); return; }
+    useParent=false;
+  }
   if(!supabaseClient){alert('config.js が読み込まれていません');return;}
   const btn=document.getElementById('btn-save');
   btn.textContent='保存中...';btn.disabled=true;
@@ -2599,8 +2617,7 @@ async function saveToSupabase(){
   if(savedCandidates.length>0) saveData._candidates=savedCandidates;
   if(targetSkill!=null) saveData._targetSkill=targetSkill;
   if(simComment) saveData._comment=simComment;
-  const linkChk=document.getElementById('chk-parent-link');
-  if(currentUUID && linkChk && linkChk.checked) saveData._parentUuid=currentUUID;
+  if(useParent && currentUUID) saveData._parentUuid=currentUUID;
   const{data,error}=await supabaseClient.from('skill_data')
     .insert({data:saveData}).select('uuid').single();
   if(error||!data){alert('保存失敗: '+(error?.message||'不明'));}
@@ -2610,16 +2627,9 @@ async function saveToSupabase(){
     document.getElementById('import-status').textContent='✓ saved';
     setUUIDDisplay(data.uuid);
     simDirty=false;
-    // 保存後: 親を fetch し直して 参考元セクション更新
-    if(saveData._parentUuid){
-      try{
-        const pr=await supabaseClient.from('skill_data').select('data').eq('uuid',saveData._parentUuid).single();
-        parentSim=pr.data?{uuid:saveData._parentUuid,data:pr.data.data}:null;
-      }catch(e){parentSim=null;}
-    } else {
-      parentSim=null;
-    }
-    renderParentLinkOption();renderParentSection();
+    // 保存後: 親チェーンを最大PARENT_CHAIN_MAX世代 fetch し直して更新
+    parentChain=await fetchParentChain(saveData._parentUuid);
+    renderParentSection();
     if(typeof DISCORD_WEBHOOK_NEWINSERT!=='undefined')
       fetch(DISCORD_WEBHOOK_NEWINSERT,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({content:`新しいシミュレーションが保存されました\n${location.origin}${location.pathname}?id=${data.uuid}`})}).catch(()=>{});
     showModal(data.uuid);
@@ -2711,8 +2721,8 @@ function importJSONFile(input){
         if(supabaseClient) document.getElementById('btn-save').style.display='';
       }
       simDirty=false;
-      parentSim=null;
-      refreshUpdateSongs();renderParentLinkOption();render();
+      parentChain=[];
+      refreshUpdateSongs();render();
     }catch(err){
       setStatus(`✗ ${err.message}`,true);
     }
