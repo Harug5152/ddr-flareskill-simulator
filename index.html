@@ -1051,13 +1051,13 @@ table.stats-tbl td.sv-dlt.neg { color: var(--tp-negative); }
       <!-- Update existing form -->
       <div id="form-update" style="display:none">
         <div class="fg"><label>CATEGORY</label>
-          <select id="u-cat" onchange="refreshUpdateSongs()">
+          <select id="u-cat" onchange="refreshUpdateSongs();syncUpdateNote()">
             <option value="CLASSIC">CLASSIC</option>
             <option value="WHITE">WHITE</option>
             <option value="GOLD">GOLD</option>
           </select>
         </div>
-        <div class="fg"><label>SONG</label><select id="u-song"></select></div>
+        <div class="fg"><label>SONG</label><select id="u-song" onchange="syncUpdateNote()"></select></div>
         <div class="fg"><label>NEW RANK</label><select id="u-rank"></select></div>
         <div id="note-section" style="display:none">
           <div class="note-label">SONG NOTE</div>
@@ -1969,6 +1969,11 @@ function onNoteInput(el){
     td.classList.toggle('has-note',!!el.value);
   });
 }
+function syncUpdateNote(){
+  const entryId=document.getElementById('u-song').value;
+  if(entryId) showNoteSection(entryId);
+  else { document.getElementById('note-section').style.display='none'; currentNoteId=null; }
+}
 
 function selectRowForUpdate(cat, entryId){
   if(window.innerWidth<=768) openMobRpane();
@@ -2065,7 +2070,7 @@ function switchMode(m, fromEdit=false){
   document.getElementById('form-new').style.display       =m==='new'       ?'':'none';
   document.getElementById('form-update').style.display    =m==='update'    ?'':'none';
   document.getElementById('form-candidate').style.display =m==='candidate' ?'':'none';
-  if(m==='update')refreshUpdateSongs();
+  if(m==='update'){refreshUpdateSongs();syncUpdateNote();}
   if(m==='candidate'){
     if(!fromEdit){
       editingCandId=null;
