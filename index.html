@@ -2405,17 +2405,21 @@ function fallbackCopy(text,cb){
 // Image export
 // ============================================================
 // color-mix() 等 html2canvas が解釈できない色関数を、キャプチャ前にブラウザ側で
-// rgb()/rgba() 形式へ正規化する（getComputedStyle が返す computed value を
-// canvas 2D の fillStyle に一度通すと、ブラウザが解釈可能な形式に正規化して返す性質を利用）
+// rgba() 形式へ正規化する。getComputedStyle は color-mix() を color() 関数形式で返し、
+// canvas の fillStyle に代入して読み戻しても color() のまま保持されてしまう（正規化されない）
+// ため、1x1 canvas に実際に描画してピクセル値を読み取ることで確実に rgba() 形式へ変換する
 function normalizeCloneColors(root){
   const canvas=document.createElement('canvas');
-  const ctx=canvas.getContext('2d');
+  canvas.width=1;canvas.height=1;
+  const ctx=canvas.getContext('2d',{willReadFrequently:true});
   const props=['color','backgroundColor','borderTopColor','borderRightColor','borderBottomColor','borderLeftColor'];
   const norm=v=>{
     if(!v) return v;
-    ctx.fillStyle='rgba(0,0,0,0)';
+    ctx.clearRect(0,0,1,1);
     ctx.fillStyle=v;
-    return ctx.fillStyle;
+    ctx.fillRect(0,0,1,1);
+    const d=ctx.getImageData(0,0,1,1).data;
+    return `rgba(${d[0]},${d[1]},${d[2]},${(d[3]/255).toFixed(3)})`;
   };
   [root,...root.querySelectorAll('*')].forEach(el=>{
     const cs=getComputedStyle(el);
