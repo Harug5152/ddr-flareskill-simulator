@@ -2404,6 +2404,24 @@ function fallbackCopy(text,cb){
 // ============================================================
 // Image export
 // ============================================================
+// color-mix() 等 html2canvas が解釈できない色関数を、キャプチャ前にブラウザ側で
+// rgb()/rgba() 形式へ正規化する（getComputedStyle が返す computed value を
+// canvas 2D の fillStyle に一度通すと、ブラウザが解釈可能な形式に正規化して返す性質を利用）
+function normalizeCloneColors(root){
+  const canvas=document.createElement('canvas');
+  const ctx=canvas.getContext('2d');
+  const props=['color','backgroundColor','borderTopColor','borderRightColor','borderBottomColor','borderLeftColor'];
+  const norm=v=>{
+    if(!v) return v;
+    ctx.fillStyle='rgba(0,0,0,0)';
+    ctx.fillStyle=v;
+    return ctx.fillStyle;
+  };
+  [root,...root.querySelectorAll('*')].forEach(el=>{
+    const cs=getComputedStyle(el);
+    props.forEach(p=>{ el.style[p]=norm(cs[p]); });
+  });
+}
 async function saveAsImage(){
   const btn=document.getElementById('btn-image-modal');
   if(btn){btn.textContent='...'; btn.disabled=true;}
@@ -2504,6 +2522,11 @@ async function saveAsImage(){
     const HEADER_W=CENTER_W+RPANE_W;
     headerClone.style.cssText=`position:fixed;left:-9999px;top:0;width:${HEADER_W}px;display:flex;align-items:center;background:linear-gradient(180deg,#0e0e20 0%,#090910 100%);padding:10px 20px;gap:18px;`;
     document.body.appendChild(headerClone);
+
+    // html2canvas未対応の色関数（color-mix()等）を正規化
+    normalizeCloneColors(headerClone);
+    normalizeCloneColors(centerClone);
+    normalizeCloneColors(rpaneClone);
 
     const [hc,cc,rc]=await Promise.all([
       html2canvas(headerClone,opts),
