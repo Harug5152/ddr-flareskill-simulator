@@ -749,6 +749,13 @@ table.st tr.sim-mod td:first-child { border-left-color: var(--tp-warn); }
 .mode-btn { background: var(--tp-bg-1); border-color: var(--tp-border-1); color: var(--tp-text-2); }
 .mode-btn.on { background: var(--tp-bg-2); color: var(--tp-accent); border-color: var(--tp-border-1); }
 .mode-btn:hover:not(.on) { background: var(--tp-bg-2); }
+.bulk-toggle-row { margin-bottom: 8px; }
+.btn-bulk-toggle { width: 100%; background: var(--tp-bg-1); border: 1px solid var(--tp-border-1); color: var(--tp-text-2);
+  padding: 6px 10px; border-radius: 4px; cursor: pointer; font-size: 12px; transition: all 0.2s; }
+.btn-bulk-toggle:hover { background: var(--tp-bg-2); }
+.btn-bulk-toggle.on { background: color-mix(in srgb, var(--tp-accent) 15%, var(--tp-bg-1)); border-color: var(--tp-accent); color: var(--tp-accent); }
+tr.bulk-selected td { background: color-mix(in srgb, var(--tp-accent) 18%, transparent) !important; }
+td.bulk-chk { text-align: center; cursor: pointer; }
 .fg label, .target-input-row label { color: var(--tp-text-3); }
 #sim-color-toggle-row { color: var(--tp-text-3); }
 .fg input, .fg select,
@@ -1093,6 +1100,9 @@ table.stats-tbl td.sv-dlt.neg { color: var(--tp-negative); }
 
       <!-- Update existing form -->
       <div id="form-update" style="display:none">
+        <div class="bulk-toggle-row">
+          <button type="button" id="btn-bulk-toggle" class="btn-bulk-toggle" onclick="toggleBulkMode()">☑ 一括選択モード</button>
+        </div>
         <div class="fg"><label>CATEGORY</label>
           <select id="u-cat" onchange="refreshUpdateSongs();syncUpdateNote()">
             <option value="CLASSIC">CLASSIC</option>
@@ -1381,6 +1391,8 @@ let targetSkill      = null;
 let parentChain      = []; // [{uuid,data}] 参考元Simチェーン (index 0 = 直近親, 最大3世代)
 let parentAchOpen    = false;
 const PARENT_CHAIN_MAX = 3;
+let bulkMode          = false; // 既存更新: 一括ランク変更モード
+let bulkSelectedEntries = new Map(); // key: `${cat}::${id}` -> {cat,id}
 
 // ============================================================
 // Core helpers
@@ -1492,6 +1504,7 @@ function renderTable(cat){
   newT30.forEach((e,i)=>{
     let cls='row-clickable';
     let onclick='';
+    let bulkChk=false;
     if(simNewIds.has(e.id)){
       if(showSimColors) cls='sim-in row-clickable';
       onclick=`onclick="editNewEntry('${esc(e.id)}')"`;
@@ -1499,11 +1512,20 @@ function renderTable(cat){
       if(showSimColors&&updIds.has(e.id)) cls='sim-mod row-clickable';
       else if(showSimColors&&e._sim==='new') cls='sim-in row-clickable';
       else if(showSimColors&&e._sim==='mod') cls='sim-mod row-clickable';
-      onclick=`onclick="selectRowForUpdate('${cat}','${esc(e.id)}')"`;
+      if(bulkMode){
+        bulkChk=true;
+        if(bulkSelectedEntries.has(cat+'::'+e.id)) cls+=' bulk-selected';
+        onclick=`onclick="toggleBulkSelect('${cat}','${esc(e.id)}')"`;
+      } else {
+        onclick=`onclick="selectRowForUpdate('${cat}','${esc(e.id)}')"`;
+      }
     }
     const hasNote=!!(noteEdits[e.id]!==undefined?noteEdits[e.id]:e.note);
+    const posCell=bulkChk
+      ?`<td class="pos bulk-chk">${bulkSelectedEntries.has(cat+'::'+e.id)?'☑':'☐'}</td>`
+      :`<td class="pos${hasNote?' has-note':''}">${i+1}</td>`;
     html+=`<tr class="${cls}" ${onclick}>
-      <td class="pos${hasNote?' has-note':''}">${i+1}</td>
+      ${posCell}
       <td class="sname" title="${esc(e.name)}">${esc(e.name)}</td>
       <td>${diffSpan(e.diff,e.style)}</td>
       <td class="lv">${e.level}</td>
@@ -1770,7 +1792,7 @@ function render(){
   updateSaveBtnLabel();
   updateEmptyBanner();
   updateActionButtons();
-  if(simMode==='update') refreshUpdateSongs();
+  if(simMode==='update'){ refreshUpdateSongs(); updateBulkUI(); }
   renderPendingList(
     simNewEntries.map(e=>({...e,infoStr:`${e.cat} ${getDiffDisplay(e.diff,e.style)} Lv${e.level} ${RANK_NAMES[e.rankIdx]} ${e.fs}`})),
     'new-entries-list','editNewEntry','removeNewEntry'
@@ -1843,17 +1865,13 @@ function removeNewEntry(id){
 // ============================================================
 // Sim: update existing (multiple)
 // ============================================================
-function addUpdateEntry(){
-  const cat=document.getElementById('u-cat').value;
-  const entryId=document.getElementById('u-song').value;
-  const newRankIdx=parseInt(document.getElementById('u-rank').value);
+function applyRankChange(cat,entryId,newRankIdx){
   // simNewEntry の場合は直接更新
   const newEntry=simNewEntries.find(e=>e.id===entryId);
   if(newEntry){
     const fs=(FLARE_TABLE[newEntry.level]||[])[newRankIdx]||0;
     simNewEntries=simNewEntries.map(e=>e.id===entryId?{...e,rankIdx:newRankIdx,fs}:e);
     simDirty=true;
-    render();
     return;
   }
   const old=skillData[cat].find(e=>e.id===entryId);
@@ -1862,14 +1880,53 @@ function addUpdateEntry(){
     // FS変動なし → simUpdateEntriesから除去してソート維持
     simUpdateEntries=simUpdateEntries.filter(u=>!(u.entryId===entryId&&u.cat===cat));
     simDirty=true;
-    render();
     return;
   }
   const existing=simUpdateEntries.findIndex(u=>u.entryId===entryId&&u.cat===cat);
   if(existing>=0)simUpdateEntries[existing]={...simUpdateEntries[existing],newRankIdx};
   else simUpdateEntries.push({id:`sim_upd_${simCounter++}`,cat,entryId,newRankIdx});
   simDirty=true;
+}
+function addUpdateEntry(){
+  const newRankIdx=parseInt(document.getElementById('u-rank').value);
+  if(bulkMode && bulkSelectedEntries.size>0){
+    bulkSelectedEntries.forEach(({cat,id})=>applyRankChange(cat,id,newRankIdx));
+    bulkSelectedEntries.clear();
+    render();
+    return;
+  }
+  const cat=document.getElementById('u-cat').value;
+  const entryId=document.getElementById('u-song').value;
+  applyRankChange(cat,entryId,newRankIdx);
   render();
+}
+// ============================================================
+// Sim: bulk rank change (一括選択モード)
+// ============================================================
+function toggleBulkMode(){
+  bulkMode=!bulkMode;
+  if(!bulkMode) bulkSelectedEntries.clear();
+  render();
+}
+function toggleBulkSelect(cat,id){
+  const key=cat+'::'+id;
+  if(bulkSelectedEntries.has(key)) bulkSelectedEntries.delete(key);
+  else bulkSelectedEntries.set(key,{cat,id});
+  render();
+}
+function updateBulkUI(){
+  const btn=document.getElementById('btn-bulk-toggle');
+  if(btn){
+    btn.classList.toggle('on',bulkMode);
+    btn.textContent=bulkMode?'✕ 一括選択を終了':'☑ 一括選択モード';
+  }
+  const sel=document.getElementById('u-song');
+  if(bulkMode && bulkSelectedEntries.size>0){
+    sel.innerHTML=`<option>(${bulkSelectedEntries.size}曲選択済み)</option>`;
+    sel.disabled=true;
+  } else {
+    sel.disabled=false;
+  }
 }
 function editUpdateEntry(id){
   const u=simUpdateEntries.find(u=>u.id===id);if(!u)return;
@@ -2232,6 +2289,10 @@ function toggleCandSection(cat) {
 // ============================================================
 
 function switchMode(m, fromEdit=false){
+  if(m!=='update' && bulkMode){
+    bulkMode=false; bulkSelectedEntries.clear();
+    CATS.forEach(renderTable);
+  }
   simMode=m;
   document.getElementById('modeBtn-new').classList.toggle('on',m==='new');
   document.getElementById('modeBtn-update').classList.toggle('on',m==='update');
