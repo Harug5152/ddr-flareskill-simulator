@@ -637,7 +637,7 @@ table.cand-tbl th:nth-child(7),table.cand-tbl td:nth-child(7){width:38px;text-al
   --tp-cat-classic: #d29922;  --tp-cat-white: #8b949e;  --tp-cat-gold: #e3b341;
 }
 
-/* ── Parent Sim (参考元) section ── */
+/* ── Parent Sim (バージョン履歴) section ── */
 #parent-section {
   background: var(--tp-bg-1); border: 1px solid var(--tp-border-1);
   border-radius: 5px; padding: 8px 10px; margin-bottom: 10px;
@@ -1125,7 +1125,7 @@ table.stats-tbl td.sv-dlt.neg { color: var(--tp-negative); }
 
       <div id="parent-section" style="display:none">
         <div class="parent-head">
-          <span class="parent-label">参考元 (<span id="parent-count">0</span>世代)</span>
+          <span class="parent-label">バージョン履歴 (<span id="parent-count">0</span>世代)</span>
           <span class="parent-curr" id="parent-curr"></span>
         </div>
         <div class="parent-tree" id="parent-tree"></div>
@@ -1292,14 +1292,20 @@ table.stats-tbl td.sv-dlt.neg { color: var(--tp-negative); }
 </div>
 
 
-<!-- Save Parent Confirmation Modal -->
+<!-- Save Confirmation Modal -->
 <div id="save-parent-modal">
   <div class="modal-box">
-    <h2>保存方法を選択</h2>
-    <p>現在のSim <span id="save-modal-parent-short" style="font-family:monospace;color:var(--tp-accent);"></span> を参考元にすると、進捗や差分を追跡できます (最大3世代)。</p>
+    <h2>シミュレーションを保存</h2>
+    <div class="fg" style="margin-bottom:10px;">
+      <label>シミュレーション名（任意・30字以内）</label>
+      <input type="text" id="save-modal-title" maxlength="30">
+    </div>
+    <div id="save-modal-parent-row">
+      <p>現在のSim <span id="save-modal-parent-short" style="font-family:monospace;color:var(--tp-accent);"></span> をバージョン履歴に残すと、進捗や差分を追跡できます (最大3世代)。</p>
+    </div>
     <div class="modal-actions">
-      <button class="btn-modal btn-modal-green" onclick="closeSaveParentModal();saveToSupabase(true)">参考元として保存</button>
-      <button class="btn-modal btn-copy" onclick="closeSaveParentModal();saveToSupabase(false)">独立して保存</button>
+      <button id="save-modal-parent-btn" class="btn-modal btn-modal-green" onclick="closeSaveParentModal();saveToSupabase(true)">バージョン履歴として保存</button>
+      <button id="save-modal-independent-btn" class="btn-modal btn-copy" onclick="closeSaveParentModal();saveToSupabase(false)">独立して保存</button>
       <button class="btn-modal btn-close" onclick="closeSaveParentModal()">キャンセル</button>
     </div>
   </div>
@@ -1383,12 +1389,14 @@ let simCounter       = 0;
 let showSimColors    = true;
 let showSimOut       = true;
 let simComment       = '';
+let simTitle         = ''; // シミュレーション名（30字以内・任意）
+const DEFAULT_PAGE_TITLE = document.title;
 let noteEdits        = {};   // {entryId: noteText}
 let currentNoteId    = null;
 let candidateEntries = [];   // [{id,cat,name,diff,level,rankIdx,fs,tier}]
 let editingCandId    = null;
 let targetSkill      = null;
-let parentChain      = []; // [{uuid,data}] 参考元Simチェーン (index 0 = 直近親, 最大3世代)
+let parentChain      = []; // [{uuid,data}] バージョン履歴Simチェーン (index 0 = 直近親, 最大3世代)
 let parentAchOpen    = false;
 const PARENT_CHAIN_MAX = 3;
 let bulkMode          = false; // 既存更新: 一括ランク変更モード
@@ -2136,7 +2144,7 @@ function onCommentInput(el){
 }
 
 // ============================================================
-// Parent Sim (参考元) - Issue #2 差分・追跡機能
+// Parent Sim (バージョン履歴) - Issue #2 差分・追跡機能
 // ============================================================
 async function fetchParentChain(startUuid){
   const chain=[];
@@ -2153,9 +2161,18 @@ async function fetchParentChain(startUuid){
   }
   return chain;
 }
+function defaultSimTitle(){
+  const d=new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
 function openSaveParentModal(){
+  const hasParent=!!currentUUID;
   const el=document.getElementById('save-modal-parent-short');
   if(el) el.textContent=(currentUUID||'').slice(0,8)+'…';
+  document.getElementById('save-modal-parent-row').style.display=hasParent?'':'none';
+  document.getElementById('save-modal-parent-btn').style.display=hasParent?'':'none';
+  document.getElementById('save-modal-independent-btn').textContent=hasParent?'独立して保存':'保存';
+  document.getElementById('save-modal-title').value=simTitle||defaultSimTitle();
   document.getElementById('save-parent-modal').classList.add('on');
 }
 function closeSaveParentModal(){
@@ -2673,6 +2690,7 @@ async function loadFromSupabase(uuid){
   const tEl=document.getElementById('target-val');
   if(tEl) tEl.value=targetSkill!=null?targetSkill:'';
   simComment=loaded._comment||'';
+  simTitle=loaded._title||'';
   const ca=document.getElementById('sim-comment-area');
   if(ca){ca.value=simComment;onCommentInput(ca);}
   normalizeFsFields(skillData);
@@ -2686,25 +2704,22 @@ async function loadFromSupabase(uuid){
   const saved=(data.updated_at||'').split('T')[0];
   const accessed=data.last_accessed?data.last_accessed.split('T')[0]:'';
   document.getElementById('import-status').textContent=`保存:${saved}　最終アクセス:${accessed}`;
-  document.getElementById('hd-uuid-val').textContent=uuid;
-  document.getElementById('hd-uuid').style.display='';
-  setUUIDDisplay(uuid);
+  updateIdentityDisplay(uuid);
   document.getElementById('btn-save').style.display='';
   updateSaveBtnLabel();
   if(data.last_accessed) checkTTL(data.last_accessed);
   simDirty=false;
-  // 参考元Simチェーンを最大PARENT_CHAIN_MAX世代辿る
+  // バージョン履歴Simチェーンを最大PARENT_CHAIN_MAX世代辿る
   parentChain=await fetchParentChain(loaded._parentUuid);
   refreshUpdateSongs();renderParentSection();render();
   Promise.resolve(supabaseClient.rpc('touch_last_accessed',{record_uuid:uuid})).catch(()=>{});
 }
 async function saveToSupabase(useParent){
-  // btn-save から引数なしで呼ばれ、かつ ?id ロード中なら 保存モーダルで選択
-  if(useParent===undefined){
-    if(currentUUID){ openSaveParentModal(); return; }
-    useParent=false;
-  }
+  // btn-save から引数なしで呼ばれた場合は常に保存モーダルで名前/保存方法を選択
+  if(useParent===undefined){ openSaveParentModal(); return; }
   if(!supabaseClient){alert('config.js が読み込まれていません');return;}
+  const titleInput=document.getElementById('save-modal-title');
+  if(titleInput) simTitle=titleInput.value.trim().slice(0,30);
   const btn=document.getElementById('btn-save');
   btn.textContent='保存中...';btn.disabled=true;
   const hasNoteChanges=Object.keys(noteEdits).length>0;
@@ -2713,6 +2728,7 @@ async function saveToSupabase(useParent){
   if(savedCandidates.length>0) saveData._candidates=savedCandidates;
   if(targetSkill!=null) saveData._targetSkill=targetSkill;
   if(simComment) saveData._comment=simComment;
+  if(simTitle) saveData._title=simTitle;
   if(useParent && currentUUID) saveData._parentUuid=currentUUID;
   const{data,error}=await supabaseClient.from('skill_data')
     .insert({data:saveData}).select('uuid').single();
@@ -2721,7 +2737,7 @@ async function saveToSupabase(useParent){
     currentUUID=data.uuid;
     history.replaceState(null,'','?id='+data.uuid);
     document.getElementById('import-status').textContent='✓ saved';
-    setUUIDDisplay(data.uuid);
+    updateIdentityDisplay(data.uuid);
     simDirty=false;
     // 保存後: 親チェーンを最大PARENT_CHAIN_MAX世代 fetch し直して更新
     parentChain=await fetchParentChain(saveData._parentUuid);
@@ -2765,9 +2781,18 @@ function copyBookmarklet(btn){
     setTimeout(()=>{btn.textContent='コードをコピー';btn.classList.remove('copied');},2000);
   });
 }
-function setUUIDDisplay(uuid){
+function setUUIDDisplay(label){
   const mel=document.getElementById('mob-uuid-display');
-  if(mel){ mel.textContent=uuid||''; mel.style.display=uuid?'block':'none'; }
+  if(mel){ mel.textContent=label||''; mel.style.display=label?'block':'none'; }
+}
+// ヘッダー/モバイルのUUID表示・ページタイトルを更新（シミュレーション名が設定されていればそちらを優先表示）
+function updateIdentityDisplay(uuid){
+  const label=simTitle||uuid;
+  const hdVal=document.getElementById('hd-uuid-val');
+  if(hdVal) hdVal.textContent=label;
+  document.getElementById('hd-uuid').style.display='';
+  document.title=simTitle?`${simTitle} | ${DEFAULT_PAGE_TITLE}`:DEFAULT_PAGE_TITLE;
+  setUUIDDisplay(label);
 }
 
 // ============================================================
@@ -2778,6 +2803,7 @@ function downloadJSON(){
     version:1,
     exported_at:new Date().toISOString(),
     uuid:currentUUID||null,
+    title:simTitle||null,
     skillData:JSON.parse(JSON.stringify(skillData)),
     candidateEntries:JSON.parse(JSON.stringify(candidateEntries)),
     noteEdits:JSON.parse(JSON.stringify(noteEdits)),
@@ -2809,11 +2835,10 @@ function importJSONFile(input){
       currentNoteId=null;editingCandId=null;editingNewId=null;
       document.getElementById('note-section').style.display='none';
       document.getElementById('import-status').textContent=`✓ JSON: ${file.name}`;
+      simTitle=d.title||'';
       if(d.uuid){
         currentUUID=d.uuid;
-        document.getElementById('hd-uuid-val').textContent=d.uuid;
-        document.getElementById('hd-uuid').style.display='';
-        setUUIDDisplay(d.uuid);
+        updateIdentityDisplay(d.uuid);
         if(supabaseClient) document.getElementById('btn-save').style.display='';
       }
       simDirty=false;
