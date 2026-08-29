@@ -160,7 +160,7 @@ table.st th:nth-child(1), table.st td:nth-child(1) { width: 22px; text-align: ri
 table.st th:nth-child(2), table.st td:nth-child(2) { width: auto; }
 table.st th:nth-child(3), table.st td:nth-child(3) { width: 36px; }
 table.st th:nth-child(4), table.st td:nth-child(4) { width: 24px; text-align: center; }
-table.st th:nth-child(5), table.st td:nth-child(5) { width: 50px; }
+table.st th:nth-child(5), table.st td:nth-child(5) { width: 76px; }
 table.st th:nth-child(6), table.st td:nth-child(6) { width: 38px; text-align: right; }
 
 .pos  { color: #404060; font-size: 10px; }
@@ -728,6 +728,15 @@ table.st tr.sim-in td:first-child { border-left-color: var(--tp-positive); }
 table.st tr.sim-out td { background: color-mix(in srgb, var(--tp-negative) 15%, transparent) !important; }
 table.st tr.sim-mod td { background: color-mix(in srgb, var(--tp-warn) 15%, transparent) !important; }
 table.st tr.sim-mod td:first-child { border-left-color: var(--tp-warn); }
+table.st tr.actual-diff td:first-child { border-left: 3px solid #58a6ff; }
+table.st tr.actual-out td { opacity: 0.58; }
+.actual-badge {
+  display: inline-block; margin-right: 4px; padding: 1px 4px; border-radius: 3px;
+  border: 1px solid color-mix(in srgb, #58a6ff 55%, transparent);
+  background: color-mix(in srgb, #58a6ff 12%, var(--tp-bg-1));
+  color: #79c0ff; font-size: 9px; font-weight: 700; vertical-align: 1px;
+}
+.actual-rank-arrow { color: #58a6ff; margin: 0 2px; font-size: 9px; }
 .pos { color: var(--tp-text-3); }
 .pos.has-note { color: var(--tp-negative); }
 .diff-CSP, .diff-CDP { color: color-mix(in srgb, var(--tp-accent) 70%, var(--tp-text-1)); }
@@ -1390,6 +1399,7 @@ let showSimColors    = true;
 let showSimOut       = true;
 let simComment       = '';
 let simTitle         = ''; // シミュレーション名（30字以内・任意）
+let currentRecordType = 'simulation'; // 'simulation' | 'actual'
 const DEFAULT_PAGE_TITLE = document.title;
 let noteEdits        = {};   // {entryId: noteText}
 let currentNoteId    = null;
@@ -1485,6 +1495,8 @@ function rb(rankIdx){
   return `<span class="rb rb-${cls}">${n}</span>`;
 }
 function diffSpan(diff,style){const d=getDiffDisplay(diff,style);return d?`<span class="diff-${d}">${d}</span>`:'';}
+function entryKey(e){ return e.id||`${e.name}::${e.diff}`; }
+function recordTypeOf(data){ return data&&data._recordType==='actual'?'actual':'simulation'; }
 
 
 function renderTable(cat){
@@ -1499,6 +1511,10 @@ function renderTable(cat){
   const newIds =new Set(newT30.map(e=>e.id));
   const simNewIds=new Set(simNewEntries.map(e=>e.id));
   const updIds=new Set(simUpdateEntries.filter(u=>u.cat===cat).map(u=>u.entryId));
+  const actualParent=currentRecordType==='actual'&&parentChain.length?parentChain[0].data:null;
+  const parentT30=actualParent?top30(actualParent[cat]||[]):[];
+  const parentById=new Map(parentT30.map(e=>[entryKey(e),e]));
+  const actualBaseIds=new Set(baseT30.map(e=>entryKey(e)));
 
   document.getElementById(`fs-${cat.toLowerCase()}`).textContent=newTotal.toLocaleString();
   const dEl=document.getElementById(`d-${cat.toLowerCase()}`);
@@ -1513,6 +1529,11 @@ function renderTable(cat){
     let cls='row-clickable';
     let onclick='';
     let bulkChk=false;
+    const actualEntry=skillData[cat].find(x=>entryKey(x)===entryKey(e));
+    const parentEntry=parentById.get(entryKey(e));
+    const actualKind=actualParent&&actualEntry
+      ?(!parentEntry?'new':actualEntry.rankIdx>parentEntry.rankIdx?'up':actualEntry.rankIdx<parentEntry.rankIdx?'down':'')
+      :'';
     if(simNewIds.has(e.id)){
       if(showSimColors) cls='sim-in row-clickable';
       onclick=`onclick="editNewEntry('${esc(e.id)}')"`;
@@ -1528,16 +1549,26 @@ function renderTable(cat){
         onclick=`onclick="selectRowForUpdate('${cat}','${esc(e.id)}')"`;
       }
     }
+    if(actualKind) cls+=' actual-diff';
     const hasNote=!!(noteEdits[e.id]!==undefined?noteEdits[e.id]:e.note);
     const posCell=bulkChk
       ?`<td class="pos bulk-chk">${bulkSelectedEntries.has(cat+'::'+e.id)?'☑':'☐'}</td>`
       :`<td class="pos${hasNote?' has-note':''}">${i+1}</td>`;
+    const actualLabel=actualKind==='new'?'実績NEW':actualKind==='up'?'実績↑':actualKind==='down'?'実績↓':'';
+    const actualTitle=parentEntry
+      ?`親: ${RANK_NAMES[parentEntry.rankIdx]} → 実績: ${RANK_NAMES[actualEntry.rankIdx]}`
+      :'親データにない新規実績';
+    const actualBadge=actualLabel?`<span class="actual-badge" title="${esc(actualTitle)}">${actualLabel}</span>`:'';
+    const hasCurrentSim=simNewIds.has(e.id)||updIds.has(e.id);
+    const rankHtml=parentEntry&&actualKind&&actualKind!=='new'&&!hasCurrentSim
+      ?`${rb(parentEntry.rankIdx)}<span class="actual-rank-arrow">→</span>${rb(e.rankIdx)}`
+      :rb(e.rankIdx);
     html+=`<tr class="${cls}" ${onclick}>
       ${posCell}
-      <td class="sname" title="${esc(e.name)}">${esc(e.name)}</td>
+      <td class="sname" title="${esc(e.name)}">${actualBadge}${esc(e.name)}</td>
       <td>${diffSpan(e.diff,e.style)}</td>
       <td class="lv">${e.level}</td>
-      <td>${rb(e.rankIdx)}</td>
+      <td>${rankHtml}</td>
       <td class="fsv">${e.fs}</td>
     </tr>`;
   });
@@ -1545,6 +1576,16 @@ function renderTable(cat){
     html+=`<tr class="sim-out">
       <td class="pos">-</td>
       <td class="sname" title="${esc(e.name)}">${esc(e.name)}</td>
+      <td>${diffSpan(e.diff,e.style)}</td>
+      <td class="lv">${e.level}</td>
+      <td>${rb(e.rankIdx)}</td>
+      <td class="fsv">${e.fs}</td>
+    </tr>`;
+  });
+  if(showSimOut&&actualParent) parentT30.filter(e=>!actualBaseIds.has(entryKey(e))).forEach(e=>{
+    html+=`<tr class="actual-diff actual-out">
+      <td class="pos">-</td>
+      <td class="sname" title="${esc(e.name)}"><span class="actual-badge">実績OUT</span>${esc(e.name)}</td>
       <td>${diffSpan(e.diff,e.style)}</td>
       <td class="lv">${e.level}</td>
       <td>${rb(e.rankIdx)}</td>
@@ -2190,15 +2231,23 @@ function renderParentSection(){
   if(!sec) return;
   if(!parentChain.length){ sec.style.display='none'; return; }
   sec.style.display='';
-  const currTotal=grandTotal(skillData);
+  const currentData={CLASSIC:skillData.CLASSIC,WHITE:skillData.WHITE,GOLD:skillData.GOLD,_recordType:currentRecordType};
+  const currTotal=grandTotal(currentData);
   document.getElementById('parent-count').textContent=parentChain.length;
   document.getElementById('parent-curr').textContent='現: '+currTotal.toLocaleString();
   // Tree items
   const treeHtml=parentChain.map((p,i)=>{
     const pd=p.data||{};
     const pbase={CLASSIC:pd.CLASSIC||[],WHITE:pd.WHITE||[],GOLD:pd.GOLD||[]};
+    const newer=i===0?currentData:(parentChain[i-1].data||{});
+    const newerBase={CLASSIC:newer.CLASSIC||[],WHITE:newer.WHITE||[],GOLD:newer.GOLD||[]};
     const pTotal=grandTotal(pbase);
-    const dTot=currTotal-pTotal;
+    const dTot=grandTotal(newerBase)-pTotal;
+    const newerType=recordTypeOf(newer);
+    const olderType=recordTypeOf(pd);
+    const deltaLabel=newerType==='actual'&&olderType==='actual'?'前回比'
+      :newerType==='actual'&&olderType==='simulation'?'計画比'
+      :newerType==='simulation'?'計画':'差分';
     const cls=dTot>0?'pos':dTot<0?'neg':'zer';
     const branch=(i===parentChain.length-1)?'└':'├';
     const shortUuid=p.uuid.slice(0,8)+'…';
@@ -2210,7 +2259,7 @@ function renderParentSection(){
       `<span class="tree-level">[${i+1}]</span>`+
       `<a class="parent-link" href="?id=${encodeURIComponent(p.uuid)}" target="_blank" rel="noopener" title="${esc(p.uuid)}">${esc(label)}</a>`+
       `<span class="parent-comm" title="${esc(comment)}">${esc(excerpt)}</span>`+
-      `<span class="parent-delta ${cls}">${dTot>=0?'+':''}${dTot.toLocaleString()}</span>`+
+      `<span class="parent-delta ${cls}" title="この版から次の版への差分">${deltaLabel} ${dTot>=0?'+':''}${dTot.toLocaleString()}</span>`+
       `</div>`;
   }).join('');
   document.getElementById('parent-tree').innerHTML=treeHtml;
@@ -2692,6 +2741,7 @@ async function loadFromSupabase(uuid){
   if(tEl) tEl.value=targetSkill!=null?targetSkill:'';
   simComment=loaded._comment||'';
   simTitle=loaded._title||'';
+  currentRecordType=recordTypeOf(loaded);
   const ca=document.getElementById('sim-comment-area');
   if(ca){ca.value=simComment;onCommentInput(ca);}
   normalizeFsFields(skillData);
@@ -2737,6 +2787,7 @@ async function saveToSupabase(useParent){
   if(error||!data){alert('保存失敗: '+(error?.message||'不明'));}
   else{
     currentUUID=data.uuid;
+    currentRecordType='simulation';
     history.replaceState(null,'','?id='+data.uuid);
     document.getElementById('import-status').textContent='✓ saved';
     updateIdentityDisplay(data.uuid);
@@ -2805,6 +2856,7 @@ function downloadJSON(){
     version:1,
     exported_at:new Date().toISOString(),
     uuid:currentUUID||null,
+    recordType:currentRecordType,
     title:simTitle||null,
     skillData:JSON.parse(JSON.stringify(skillData)),
     candidateEntries:JSON.parse(JSON.stringify(candidateEntries)),
@@ -2838,6 +2890,7 @@ function importJSONFile(input){
       document.getElementById('note-section').style.display='none';
       document.getElementById('import-status').textContent=`✓ JSON: ${file.name}`;
       simTitle=d.title||'';
+      currentRecordType=d.recordType==='actual'?'actual':'simulation';
       if(d.uuid){
         currentUUID=d.uuid;
         updateIdentityDisplay(d.uuid);
