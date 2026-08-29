@@ -160,7 +160,7 @@ table.st th:nth-child(1), table.st td:nth-child(1) { width: 22px; text-align: ri
 table.st th:nth-child(2), table.st td:nth-child(2) { width: auto; }
 table.st th:nth-child(3), table.st td:nth-child(3) { width: 36px; }
 table.st th:nth-child(4), table.st td:nth-child(4) { width: 24px; text-align: center; }
-table.st th:nth-child(5), table.st td:nth-child(5) { width: 76px; }
+table.st th:nth-child(5), table.st td:nth-child(5) { width: 50px; }
 table.st th:nth-child(6), table.st td:nth-child(6) { width: 38px; text-align: right; }
 
 .pos  { color: #404060; font-size: 10px; }
@@ -651,13 +651,15 @@ table.cand-tbl th:nth-child(7),table.cand-tbl td:nth-child(7){width:38px;text-al
 .parent-achievement { padding: 5px 0; border-top: 1px solid var(--tp-border-2); margin-top: 4px; }
 .parent-ach-summary { display: flex; gap: 12px; justify-content: center; font-size: 11px; margin-bottom: 4px; }
 .parent-ach-summary .ach { color: var(--tp-positive); font-weight: 700; }
-.parent-ach-summary .unach { color: var(--tp-warn); font-weight: 700; }
+.parent-ach-summary .partial { color: var(--tp-warn); font-weight: 700; }
+.parent-ach-summary .unach { color: var(--tp-text-3); font-weight: 700; }
 .parent-ach-toggle { cursor: pointer; text-align: center; font-size: 10px; color: var(--tp-text-3); user-select: none; padding: 2px 0; }
 .parent-ach-toggle:hover { color: var(--tp-text-2); }
 .parent-ach-list { display: none; max-height: 180px; overflow-y: auto; margin-top: 4px; }
 .parent-ach-list.open { display: block; }
 .parent-ach-item { display: flex; gap: 6px; padding: 2px 0; font-size: 11px; align-items: center; }
 .parent-ach-item.done { color: var(--tp-positive); }
+.parent-ach-item.partial { color: var(--tp-warn); }
 .parent-ach-item.todo { color: var(--tp-text-2); }
 .parent-ach-item .mark { flex-shrink: 0; width: 12px; text-align: center; }
 .parent-ach-item .name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -728,15 +730,16 @@ table.st tr.sim-in td:first-child { border-left-color: var(--tp-positive); }
 table.st tr.sim-out td { background: color-mix(in srgb, var(--tp-negative) 15%, transparent) !important; }
 table.st tr.sim-mod td { background: color-mix(in srgb, var(--tp-warn) 15%, transparent) !important; }
 table.st tr.sim-mod td:first-child { border-left-color: var(--tp-warn); }
-table.st tr.actual-diff td:first-child { border-left: 3px solid #58a6ff; }
-table.st tr.actual-out td { opacity: 0.58; }
-.actual-badge {
-  display: inline-block; margin-right: 4px; padding: 1px 4px; border-radius: 3px;
-  border: 1px solid color-mix(in srgb, #58a6ff 55%, transparent);
-  background: color-mix(in srgb, #58a6ff 12%, var(--tp-bg-1));
-  color: #79c0ff; font-size: 9px; font-weight: 700; vertical-align: 1px;
-}
-.actual-rank-arrow { color: #58a6ff; margin: 0 2px; font-size: 9px; }
+table.st tr.plan-achieved td { background: color-mix(in srgb, #58a6ff 16%, transparent); }
+table.st tr.plan-achieved td:first-child { border-left: 3px solid #58a6ff; }
+table.st tr.plan-partial td { background: color-mix(in srgb, #d29922 13%, transparent); }
+table.st tr.plan-partial td:first-child { border-left: 3px solid #d29922; }
+table.st tr.plan-unmet td { background: color-mix(in srgb, var(--tp-text-3) 8%, transparent); }
+table.st tr.plan-unmet td:first-child { border-left: 3px solid var(--tp-text-3); }
+table.st tr.plan-unmet.plan-missing td { opacity: 0.52; }
+table.st tr.actual-change td { background: color-mix(in srgb, var(--tp-accent) 10%, transparent); }
+table.st tr.actual-change td:first-child { border-left: 3px solid var(--tp-accent); }
+table.st tr.actual-change.actual-out td { opacity: 0.52; }
 .pos { color: var(--tp-text-3); }
 .pos.has-note { color: var(--tp-negative); }
 .diff-CSP, .diff-CDP { color: color-mix(in srgb, var(--tp-accent) 70%, var(--tp-text-1)); }
@@ -1511,9 +1514,18 @@ function renderTable(cat){
   const newIds =new Set(newT30.map(e=>e.id));
   const simNewIds=new Set(simNewEntries.map(e=>e.id));
   const updIds=new Set(simUpdateEntries.filter(u=>u.cat===cat).map(u=>u.entryId));
-  const actualParent=currentRecordType==='actual'&&parentChain.length?parentChain[0].data:null;
-  const parentT30=actualParent?top30(actualParent[cat]||[]):[];
-  const parentById=new Map(parentT30.map(e=>[entryKey(e),e]));
+  const comparisonParent=currentRecordType==='actual'&&parentChain.length?parentChain[0].data:null;
+  const comparisonType=recordTypeOf(comparisonParent);
+  const planMode=!!comparisonParent&&comparisonType==='simulation';
+  const actualMode=!!comparisonParent&&comparisonType==='actual';
+  // 一致判定はトップ30だけでなく保存配列全体を使う。SIMで圏外に押し出された
+  // 既存曲を「新規」と誤判定しないため。
+  const parentEntries=comparisonParent?(comparisonParent[cat]||[]):[];
+  const parentById=new Map(parentEntries.map(e=>[entryKey(e),e]));
+  const plannedEntries=planMode?parentEntries.filter(e=>e._sim==='new'||e._sim==='mod'):[];
+  const plannedById=new Map(plannedEntries.map(e=>[entryKey(e),e]));
+  const baseline=planMode&&parentChain[1]?(parentChain[1].data||null):null;
+  const baselineById=new Map((baseline?(baseline[cat]||[]):[]).map(e=>[entryKey(e),e]));
   const actualBaseIds=new Set(baseT30.map(e=>entryKey(e)));
 
   document.getElementById(`fs-${cat.toLowerCase()}`).textContent=newTotal.toLocaleString();
@@ -1531,9 +1543,16 @@ function renderTable(cat){
     let bulkChk=false;
     const actualEntry=skillData[cat].find(x=>entryKey(x)===entryKey(e));
     const parentEntry=parentById.get(entryKey(e));
-    const actualKind=actualParent&&actualEntry
-      ?(!parentEntry?'new':actualEntry.rankIdx>parentEntry.rankIdx?'up':actualEntry.rankIdx<parentEntry.rankIdx?'down':'')
-      :'';
+    const planEntry=plannedById.get(entryKey(e));
+    let progress='';
+    if(planEntry&&actualEntry){
+      if(actualEntry.rankIdx>=planEntry.rankIdx) progress='achieved';
+      else {
+        const baselineEntry=baselineById.get(entryKey(e));
+        const advanced=planEntry._sim==='new'||(baselineEntry&&actualEntry.rankIdx>baselineEntry.rankIdx);
+        progress=advanced?'partial':'unmet';
+      }
+    }
     if(simNewIds.has(e.id)){
       if(showSimColors) cls='sim-in row-clickable';
       onclick=`onclick="editNewEntry('${esc(e.id)}')"`;
@@ -1549,26 +1568,18 @@ function renderTable(cat){
         onclick=`onclick="selectRowForUpdate('${cat}','${esc(e.id)}')"`;
       }
     }
-    if(actualKind) cls+=' actual-diff';
+    if(progress) cls+=' plan-'+progress;
+    else if(actualMode&&actualEntry&&(!parentEntry||actualEntry.rankIdx!==parentEntry.rankIdx)) cls+=' actual-change';
     const hasNote=!!(noteEdits[e.id]!==undefined?noteEdits[e.id]:e.note);
     const posCell=bulkChk
       ?`<td class="pos bulk-chk">${bulkSelectedEntries.has(cat+'::'+e.id)?'☑':'☐'}</td>`
       :`<td class="pos${hasNote?' has-note':''}">${i+1}</td>`;
-    const actualLabel=actualKind==='new'?'実績NEW':actualKind==='up'?'実績↑':actualKind==='down'?'実績↓':'';
-    const actualTitle=parentEntry
-      ?`親: ${RANK_NAMES[parentEntry.rankIdx]} → 実績: ${RANK_NAMES[actualEntry.rankIdx]}`
-      :'親データにない新規実績';
-    const actualBadge=actualLabel?`<span class="actual-badge" title="${esc(actualTitle)}">${actualLabel}</span>`:'';
-    const hasCurrentSim=simNewIds.has(e.id)||updIds.has(e.id);
-    const rankHtml=parentEntry&&actualKind&&actualKind!=='new'&&!hasCurrentSim
-      ?`${rb(parentEntry.rankIdx)}<span class="actual-rank-arrow">→</span>${rb(e.rankIdx)}`
-      :rb(e.rankIdx);
     html+=`<tr class="${cls}" ${onclick}>
       ${posCell}
-      <td class="sname" title="${esc(e.name)}">${actualBadge}${esc(e.name)}</td>
+      <td class="sname" title="${esc(e.name)}">${esc(e.name)}</td>
       <td>${diffSpan(e.diff,e.style)}</td>
       <td class="lv">${e.level}</td>
-      <td>${rankHtml}</td>
+      <td>${rb(e.rankIdx)}</td>
       <td class="fsv">${e.fs}</td>
     </tr>`;
   });
@@ -1582,10 +1593,20 @@ function renderTable(cat){
       <td class="fsv">${e.fs}</td>
     </tr>`;
   });
-  if(showSimOut&&actualParent) parentT30.filter(e=>!actualBaseIds.has(entryKey(e))).forEach(e=>{
-    html+=`<tr class="actual-diff actual-out">
+  if(showSimOut&&planMode) plannedEntries.filter(e=>!actualBaseIds.has(entryKey(e))).forEach(e=>{
+    html+=`<tr class="plan-unmet plan-missing">
       <td class="pos">-</td>
-      <td class="sname" title="${esc(e.name)}"><span class="actual-badge">実績OUT</span>${esc(e.name)}</td>
+      <td class="sname" title="${esc(e.name)}">${esc(e.name)}</td>
+      <td>${diffSpan(e.diff,e.style)}</td>
+      <td class="lv">${e.level}</td>
+      <td>${rb(e.rankIdx)}</td>
+      <td class="fsv">${e.fs}</td>
+    </tr>`;
+  });
+  if(showSimOut&&actualMode) top30(parentEntries).filter(e=>!actualBaseIds.has(entryKey(e))).forEach(e=>{
+    html+=`<tr class="actual-change actual-out">
+      <td class="pos">-</td>
+      <td class="sname" title="${esc(e.name)}">${esc(e.name)}</td>
       <td>${diffSpan(e.diff,e.style)}</td>
       <td class="lv">${e.level}</td>
       <td>${rb(e.rankIdx)}</td>
@@ -2234,21 +2255,34 @@ function renderParentSection(){
   const currentData={CLASSIC:skillData.CLASSIC,WHITE:skillData.WHITE,GOLD:skillData.GOLD,_recordType:currentRecordType};
   const currTotal=grandTotal(currentData);
   document.getElementById('parent-count').textContent=parentChain.length;
-  document.getElementById('parent-curr').textContent='現: '+currTotal.toLocaleString();
+  const immediate=parentChain[0].data||{};
+  let currentDelta='';
+  if(currentRecordType==='actual'&&recordTypeOf(immediate)==='simulation'){
+    // 実績は計画完成値(S)ではなく、SIM作成前の基準(A)との差を表示する。
+    const baseline=parentChain[1]&&parentChain[1].data;
+    if(baseline){
+      const d=currTotal-grandTotal({CLASSIC:baseline.CLASSIC||[],WHITE:baseline.WHITE||[],GOLD:baseline.GOLD||[]});
+      currentDelta=` 実績 ${d>=0?'+':''}${d.toLocaleString()}`;
+    }
+  } else {
+    const d=currTotal-grandTotal({CLASSIC:immediate.CLASSIC||[],WHITE:immediate.WHITE||[],GOLD:immediate.GOLD||[]});
+    const label=currentRecordType==='simulation'?'計画':'前回比';
+    currentDelta=` ${label} ${d>=0?'+':''}${d.toLocaleString()}`;
+  }
+  document.getElementById('parent-curr').textContent='現: '+currTotal.toLocaleString()+currentDelta;
   // Tree items
   const treeHtml=parentChain.map((p,i)=>{
     const pd=p.data||{};
-    const pbase={CLASSIC:pd.CLASSIC||[],WHITE:pd.WHITE||[],GOLD:pd.GOLD||[]};
-    const newer=i===0?currentData:(parentChain[i-1].data||{});
-    const newerBase={CLASSIC:newer.CLASSIC||[],WHITE:newer.WHITE||[],GOLD:newer.GOLD||[]};
-    const pTotal=grandTotal(pbase);
-    const dTot=grandTotal(newerBase)-pTotal;
-    const newerType=recordTypeOf(newer);
-    const olderType=recordTypeOf(pd);
-    const deltaLabel=newerType==='actual'&&olderType==='actual'?'前回比'
-      :newerType==='actual'&&olderType==='simulation'?'計画比'
-      :newerType==='simulation'?'計画':'差分';
-    const cls=dTot>0?'pos':dTot<0?'neg':'zer';
+    const older=parentChain[i+1]&&parentChain[i+1].data;
+    let deltaHtml='';
+    if(older){
+      const pTotal=grandTotal({CLASSIC:pd.CLASSIC||[],WHITE:pd.WHITE||[],GOLD:pd.GOLD||[]});
+      const olderTotal=grandTotal({CLASSIC:older.CLASSIC||[],WHITE:older.WHITE||[],GOLD:older.GOLD||[]});
+      const dTot=pTotal-olderTotal;
+      const deltaLabel=recordTypeOf(pd)==='simulation'?'計画':'前回比';
+      const cls=dTot>0?'pos':dTot<0?'neg':'zer';
+      deltaHtml=`<span class="parent-delta ${cls}" title="この版と直前の版との差分">${deltaLabel} ${dTot>=0?'+':''}${dTot.toLocaleString()}</span>`;
+    }
     const branch=(i===parentChain.length-1)?'└':'├';
     const shortUuid=p.uuid.slice(0,8)+'…';
     const label=pd._title||shortUuid;
@@ -2259,13 +2293,14 @@ function renderParentSection(){
       `<span class="tree-level">[${i+1}]</span>`+
       `<a class="parent-link" href="?id=${encodeURIComponent(p.uuid)}" target="_blank" rel="noopener" title="${esc(p.uuid)}">${esc(label)}</a>`+
       `<span class="parent-comm" title="${esc(comment)}">${esc(excerpt)}</span>`+
-      `<span class="parent-delta ${cls}" title="この版から次の版への差分">${deltaLabel} ${dTot>=0?'+':''}${dTot.toLocaleString()}</span>`+
+      deltaHtml+
       `</div>`;
   }).join('');
   document.getElementById('parent-tree').innerHTML=treeHtml;
   // 計画達成状況: 直近親 [1] のみを対象
   const closest=parentChain[0];
   const cbase={CLASSIC:closest.data.CLASSIC||[],WHITE:closest.data.WHITE||[],GOLD:closest.data.GOLD||[]};
+  const baseline=parentChain[1]&&parentChain[1].data;
   const plans=[];
   for(const cat of CATS){
     for(const e of (cbase[cat]||[])){
@@ -2280,24 +2315,30 @@ function renderParentSection(){
     return;
   }
   const results=plans.map(p=>{
-    const id=p.id||`${p.name}::${p.diff}`;
-    const match=(skillData[p.cat]||[]).find(x=>x.id===id);
-    const achieved=!!(match && match.rankIdx>=p.rankIdx);
-    return {plan:p,achieved};
+    const id=entryKey(p);
+    const match=(skillData[p.cat]||[]).find(x=>entryKey(x)===id);
+    const baseMatch=baseline&&(baseline[p.cat]||[]).find(x=>entryKey(x)===id);
+    let status='unmet';
+    if(match&&match.rankIdx>=p.rankIdx) status='achieved';
+    else if(match&&(p._sim==='new'||(baseMatch&&match.rankIdx>baseMatch.rankIdx))) status='partial';
+    return {plan:p,status};
   });
-  const done=results.filter(r=>r.achieved).length;
-  const todo=results.length-done;
+  const done=results.filter(r=>r.status==='achieved').length;
+  const partial=results.filter(r=>r.status==='partial').length;
+  const todo=results.length-done-partial;
   const listHtml=results.map(r=>{
     const p=r.plan;
     const info=`Lv${p.level} · ${RANK_NAMES[p.rankIdx]||'?'}`;
-    return `<div class="parent-ach-item ${r.achieved?'done':'todo'}">`+
-      `<span class="mark">${r.achieved?'✓':'△'}</span>`+
+    const itemCls=r.status==='achieved'?'done':r.status==='partial'?'partial':'todo';
+    const mark=r.status==='achieved'?'✓':r.status==='partial'?'◐':'△';
+    return `<div class="parent-ach-item ${itemCls}">`+
+      `<span class="mark">${mark}</span>`+
       `<span class="name">[${p.cat[0]}] ${esc(p.name)}</span>`+
       `<span class="info">${info}</span></div>`;
   }).join('');
   achEl.innerHTML=
     `<div class="parent-ach-head">直近親 [1] の計画達成状況</div>`+
-    `<div class="parent-ach-summary"><span class="ach">✓ ${done}</span><span class="unach">△ ${todo}</span></div>`+
+    `<div class="parent-ach-summary"><span class="ach">✓ ${done}</span><span class="partial">◐ ${partial}</span><span class="unach">△ ${todo}</span></div>`+
     `<div class="parent-ach-toggle" onclick="toggleParentAchList()">${parentAchOpen?'▲ 閉じる':'▼ 詳細'}</div>`+
     `<div class="parent-ach-list${parentAchOpen?' open':''}" id="parent-ach-list">${listHtml}</div>`;
 }
