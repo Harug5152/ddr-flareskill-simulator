@@ -310,12 +310,12 @@ table.stats-tbl td.sv-dlt.pos { color: #48d898; }
 table.stats-tbl td.sv-dlt.neg { color: #d84848; }
 
 /* ── Modals ── */
-#uuid-modal, #ttl-modal, #help-modal, #save-parent-modal {
+#uuid-modal, #ttl-modal, #help-modal, #save-parent-modal, #actual-import-modal {
   display: none; position: fixed; inset: 0;
   background: rgba(0,0,0,0.75); z-index: 100;
   align-items: center; justify-content: center;
 }
-#uuid-modal.on, #ttl-modal.on, #help-modal.on, #save-parent-modal.on { display: flex; }
+#uuid-modal.on, #ttl-modal.on, #help-modal.on, #save-parent-modal.on, #actual-import-modal.on { display: flex; }
 .modal-box.help-modal-box { width: min(920px, 62vw); max-height: 82vh; display:flex; flex-direction:column; text-align:left; }
 .help-content { overflow-y: auto; flex: 1; padding-right: 6px; margin-bottom: 16px; text-align: left; }
 .help-content::-webkit-scrollbar { width: 4px; }
@@ -1199,7 +1199,7 @@ table.stats-tbl td.sv-dlt.neg { color: var(--tp-negative); }
       <div class="help-section">
         <h3>インポート方法</h3>
         <ul>
-          <li><strong>ブックマークレット</strong> — KONAMI の DDR World 公式 Web サイトにログインし、フレアスキル対象楽曲ページで実行します。既存履歴へ接続する場合は親のUUIDまたは共有URLを入力してください。省略名の新規計画曲がある場合は、続けて正式な実データ曲との対応候補を選択できます。作成した子UUIDは次回の親候補として自動入力されます。</li>
+          <li><strong>ブックマークレット</strong> — KONAMI の DDR World 公式 Web サイトにログインし、フレアスキル対象楽曲ページで実行します。開いたシミュレータ画面で親UUID・共有URLを指定し、実データの新規曲ごとに省略登録曲へ紐づけるか、新規フレアとして扱うかを選択できます。作成した子UUIDは次回の親候補として自動入力されます。</li>
           <li><strong>JSON読込</strong> — 以前に「JSONとしてDL」で保存したファイルをインポートできます。</li>
         </ul>
       </div>
@@ -1304,6 +1304,27 @@ table.stats-tbl td.sv-dlt.neg { color: var(--tp-negative); }
 </div>
 
 
+<!-- Actual data import / parent mapping modal -->
+<div id="actual-import-modal">
+  <div class="modal-box" style="width:min(760px,94vw);max-height:86vh;overflow:auto;text-align:left;">
+    <h2>最新の実データを保存</h2>
+    <div class="fg">
+      <label>実データ名（30字以内）</label>
+      <input type="text" id="actual-import-title" maxlength="30">
+    </div>
+    <div class="fg">
+      <label>親シミュレーションのUUIDまたは共有URL（任意）</label>
+      <input type="text" id="actual-import-parent" placeholder="UUID または ?id=... の共有URL">
+    </div>
+    <div id="actual-import-status" style="font-size:11px;color:var(--tp-text-3);margin:8px 0;"></div>
+    <div id="actual-import-mappings"></div>
+    <div class="modal-actions">
+      <button id="actual-import-next" class="btn-modal btn-modal-green" onclick="prepareActualImport()">親を確認して次へ</button>
+      <button class="btn-modal btn-close" onclick="closeActualImportModal()">キャンセル</button>
+    </div>
+  </div>
+</div>
+
 <!-- Save Confirmation Modal -->
 <div id="save-parent-modal">
   <div class="modal-box">
@@ -1404,6 +1425,10 @@ let simComment       = '';
 let simTitle         = ''; // シミュレーション名（30字以内・任意）
 let currentRecordType = 'simulation'; // 'simulation' | 'actual'
 let parentMappings   = {}; // 親SIM内の省略曲ID -> 子実データの正式曲ID
+let pendingActualImport = null;
+let pendingActualParent = null;
+let pendingImportSource = null;
+let pendingImportOrigin = '';
 const DEFAULT_PAGE_TITLE = document.title;
 let noteEdits        = {};   // {entryId: noteText}
 let currentNoteId    = null;
@@ -2758,6 +2783,109 @@ async function saveAsImage(){
 // Supabase
 // ============================================================
 let supabaseClient=null,currentUUID=null;
+function parseSharedUuid(value){
+  const raw=(value||'').trim();
+  if(!raw)return '';
+  let uuid=raw;
+  try{uuid=new URL(raw).searchParams.get('id')||'';}catch(_){}
+  uuid=uuid.trim();
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(uuid)?uuid:null;
+}
+function closeActualImportModal(){
+  document.getElementById('actual-import-modal').classList.remove('on');
+}
+function receiveActualImport(data,source,origin,suggestedParentUuid){
+  pendingActualImport=JSON.parse(JSON.stringify(data));
+  pendingActualParent=null;
+  pendingImportSource=source;
+  pendingImportOrigin=origin;
+  document.getElementById('actual-import-title').value=defaultSimTitle()+' 実データ';
+  document.getElementById('actual-import-parent').value=suggestedParentUuid||'';
+  document.getElementById('actual-import-status').textContent='親を指定すると、実データの新規曲を省略名の計画曲へ紐づけられます。';
+  document.getElementById('actual-import-mappings').innerHTML='';
+  const btn=document.getElementById('actual-import-next');
+  btn.textContent='親を確認して次へ';
+  btn.onclick=prepareActualImport;
+  document.getElementById('actual-import-modal').classList.add('on');
+}
+function mappingScore(actual,plan){
+  return (actual.diff===plan.diff?0:10000)+(actual.style===plan.style?0:3000)+
+    Math.abs((actual.level||0)-(plan.level||0))*300+
+    Math.abs((actual.rankIdx||0)-(plan.rankIdx||0))*30+
+    Math.abs((actual.fs||0)-(plan.fs||0));
+}
+function renderActualMappingRows(parent){
+  const rows=[];
+  for(const cat of CATS){
+    const parentEntries=parent[cat]||[];
+    const actualEntries=pendingActualImport[cat]||[];
+    const parentIds=new Set(parentEntries.map(entryKey));
+    const exactActualIds=new Set(actualEntries.map(entryKey));
+    const planned=parentEntries.filter(e=>e._sim==='new'&&!exactActualIds.has(entryKey(e)));
+    const unmatched=actualEntries.filter(e=>!parentIds.has(entryKey(e)));
+    for(const actual of unmatched){
+      const options=[...planned].sort((a,b)=>mappingScore(actual,a)-mappingScore(actual,b));
+      rows.push({cat,actual,options});
+    }
+  }
+  if(!rows.length){
+    document.getElementById('actual-import-mappings').innerHTML='<div class="parent-ach-empty">紐づけが必要な新規曲はありません</div>';
+    return;
+  }
+  document.getElementById('actual-import-mappings').innerHTML=
+    '<div style="font-size:11px;color:var(--tp-text-2);margin:10px 0 6px;">実データの新規曲ごとに、対応する省略登録曲を選択してください。該当しない場合は「新規フレアとして扱う」のまま保存します。</div>'+
+    rows.map((r,i)=>`<div style="display:grid;grid-template-columns:minmax(180px,1fr) minmax(220px,1fr);gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--tp-border-2);">
+      <div style="font-size:11px;"><strong>${esc(r.actual.name)}</strong><br><span style="color:var(--tp-text-3);">${r.cat} · ${getDiffDisplay(r.actual.diff,r.actual.style)} · Lv${r.actual.level} · ${RANK_NAMES[r.actual.rankIdx]}</span></div>
+      <select class="actual-mapping-select" data-actual-id="${esc(entryKey(r.actual))}" style="background:var(--tp-bg-1);color:var(--tp-text-1);border:1px solid var(--tp-border-1);padding:6px;">
+        <option value="">新規フレアとして扱う</option>
+        ${r.options.map(p=>`<option value="${esc(entryKey(p))}">${esc(p.name)} · ${getDiffDisplay(p.diff,p.style)} · Lv${p.level} · ${RANK_NAMES[p.rankIdx]}</option>`).join('')}
+      </select>
+    </div>`).join('');
+}
+async function prepareActualImport(){
+  if(!pendingActualImport)return;
+  const raw=document.getElementById('actual-import-parent').value;
+  const parentUuid=parseSharedUuid(raw);
+  if(parentUuid===null){document.getElementById('actual-import-status').textContent='親UUIDまたは共有URLの形式が正しくありません。';return;}
+  if(!parentUuid){pendingActualParent=null;await finalizeActualImport();return;}
+  if(!supabaseClient){document.getElementById('actual-import-status').textContent='保存設定を読み込めませんでした。';return;}
+  document.getElementById('actual-import-status').textContent='親データを確認中...';
+  const{data,error}=await supabaseClient.from('skill_data').select('data').eq('uuid',parentUuid).single();
+  if(error||!data){document.getElementById('actual-import-status').textContent='指定された親データが見つかりません。';return;}
+  pendingActualParent={uuid:parentUuid,data:data.data||{}};
+  renderActualMappingRows(pendingActualParent.data);
+  document.getElementById('actual-import-status').textContent='接続先: '+(pendingActualParent.data._title||parentUuid.slice(0,8)+'…');
+  const btn=document.getElementById('actual-import-next');
+  btn.textContent='実データを保存';
+  btn.onclick=finalizeActualImport;
+}
+async function finalizeActualImport(){
+  if(!pendingActualImport||!supabaseClient)return;
+  const mappings={};
+  const used=new Set();
+  for(const sel of document.querySelectorAll('.actual-mapping-select')){
+    if(!sel.value)continue;
+    if(used.has(sel.value)){document.getElementById('actual-import-status').textContent='同じ計画曲を複数の実データ曲へ紐づけることはできません。';return;}
+    used.add(sel.value);
+    mappings[sel.value]=sel.dataset.actualId;
+  }
+  const saveData=JSON.parse(JSON.stringify(pendingActualImport));
+  saveData._recordType='actual';
+  saveData._title=(document.getElementById('actual-import-title').value.trim()||defaultSimTitle()+' 実データ').slice(0,30);
+  if(pendingActualParent)saveData._parentUuid=pendingActualParent.uuid;
+  if(Object.keys(mappings).length)saveData._parentMappings=mappings;
+  document.getElementById('actual-import-status').textContent='保存中...';
+  const{data,error}=await supabaseClient.from('skill_data').insert({data:saveData}).select('uuid').single();
+  if(error||!data){document.getElementById('actual-import-status').textContent='保存失敗: '+(error?.message||'不明');return;}
+  if(pendingImportSource&&pendingImportOrigin)pendingImportSource.postMessage({type:'ddr-flare-actual-import-saved',uuid:data.uuid},pendingImportOrigin);
+  location.href=location.pathname+'?id='+encodeURIComponent(data.uuid);
+}
+window.addEventListener('message',ev=>{
+  if(!ev.data||ev.data.type!=='ddr-flare-actual-import')return;
+  if(ev.origin!=='https://p.eagate.573.jp'&&ev.origin!==location.origin)return;
+  ev.source?.postMessage({type:'ddr-flare-actual-import-ready'},ev.origin);
+  receiveActualImport(ev.data.data,ev.source,ev.origin,ev.data.suggestedParentUuid);
+});
 function setStatus(msg,isError=false){
   const el=document.getElementById('import-status');
   el.textContent=msg;
@@ -2989,6 +3117,6 @@ function goHome(){
   location.href=location.pathname;
 }
 </script>
-<script id="bml-source" type="text/plain">javascript:void(!function(){var e="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeHpncmtuanZ4dHZjdWt3bmdtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1ODM3MDMsImV4cCI6MjA4OTE1OTcwM30.UjWJWhI6g_j54qpr4okmwmGOna2bA33QGwULv1G-neM",t="ddr_flare_uuid",r=[{theme:"theme-classic",name:"CLASSIC"},{theme:"theme-white",name:"WHITE"},{theme:"theme-gold",name:"GOLD"}],n=["BEGINNER","BASIC","DIFFICULT","EXPERT","CHALLENGE"];function a(e){if(!e)return 0;if(e.indexOf("flare_ex")>=0)return 10;var t=e.match(/flare_(\d+)/);return t?parseInt(t[1]):0}for(var i=location.href.indexOf("flare_data_double")>=0?"DP":"SP",l={CLASSIC:[],WHITE:[],GOLD:[]},o=0;o<r.length;o++){var f=r[o],u=document.querySelector("table."+f.theme);if(u)for(var s=u.querySelectorAll("tbody tr.data"),c=0;c<s.length;c++){var d=s[c],h=d.querySelector("td.chart .music-name"),I=h?(h.textContent||"").trim():"";if(I&&!(I.indexOf("Steps to the Star")>=0)){var m=d.querySelector("td.chart .diff");if(m){for(var v="",p=0;p<n.length;p++)if(m.classList.contains(n[p])){v=n[p];break}if(v){var g=m.querySelector(".level"),S=g?(g.textContent||"").match(/Lv\.?(\d+)/i):null,y=S?parseInt(S[1]):1,k=d.querySelector("td.flare-rank img"),w=a(k?k.src:""),C=d.querySelector("td.skill-value"),L=parseInt((C?C.textContent:"0")||"0")||0;l[f.name].push({name:I,diff:v,style:i,level:y,rankIdx:w,fs:L,date:"0000-00-00"})}}}}}if(0!==l.CLASSIC.length+l.WHITE.length+l.GOLD.length){var b=localStorage.getItem(t)||"",E=prompt("既存のバージョン履歴へ接続する場合は、親のUUIDまたは共有URLを入力してください。\n空欄の場合は独立した実データとして保存します。",b);if(null!==E){var O="";if(E=E.trim()){try{O=new URL(E).searchParams.get("id")||""}catch(e){O=E}if(O=O.trim(),!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(O))return void alert("親UUIDまたは共有URLの形式が正しくありません。")}var U=new Date,_=U.getFullYear()+"-"+String(U.getMonth()+1).padStart(2,"0")+"-"+String(U.getDate()).padStart(2,"0");l._recordType="actual",l._title=_+" 実データ",O&&(l._parentUuid=O);var x="https://ddxzgrknjvxtvcukwngm.supabase.co/rest/v1/skill_data",A={"Content-Type":"application/json",apikey:e,Authorization:"Bearer "+e,Prefer:"return=representation"},M=O?fetch(x+"?uuid=eq."+encodeURIComponent(O)+"&select=uuid,data&limit=1",{headers:A}).then(function(e){if(!e.ok)throw new Error("親データの確認に失敗しました");return e.json()}).then(function(e){if(!Array.isArray(e)||0===e.length)throw new Error("指定された親データが見つかりません");return e[0].data||{}}):Promise.resolve(null);M.then(function(e){return function(e){if(e&&"actual"!==e._recordType){for(var t={},n={},a=["なし","I","II","III","IV","V","VI","VII","VIII","IX","EX"],i=0;i<r.length;i++){for(var o=r[i].name,f=e[o]||[],u=l[o]||[],s={},c=0;c<f.length;c++)s[D(f[c])]=!0;for(var d=u.filter(function(e){return!s[D(e)]}),h=f.filter(function(e){return"new"===e._sim&&!u.some(function(t){return D(t)===D(e)})}),I=0;I<h.length;I++){var m=h[I],v=d.filter(function(e){return!n[D(e)]}).sort(function(e,t){function r(e){return(e.diff===m.diff?0:1e4)+(e.style===m.style?0:3e3)+300*Math.abs((e.level||0)-(m.level||0))+30*Math.abs((e.rankIdx||0)-(m.rankIdx||0))+Math.abs((e.fs||0)-(m.fs||0))}return r(e)-r(t)}).slice(0,10);if(0!==v.length){for(var p=["省略名の計画曲を実データへ対応付けます。","","計画: ["+o+"] "+m.name+" / "+(m.diff||"?")+" / Lv"+(m.level||"?")+" / "+(a[m.rankIdx]||"?"),"","対応する実データの番号を入力してください。","0: 対応なし（通常の新規実績として扱う）"],g=0;g<v.length;g++){var S=v[g];p.push(g+1+": "+S.name+" / "+(S.diff||"?")+" / Lv"+(S.level||"?")+" / "+(a[S.rankIdx]||"?")+" / FS "+(S.fs||0))}var y=prompt(p.join("\n"),"0");if(null===y)throw new Error("対応付けをキャンセルしました");var k=parseInt(y,10);if(!isNaN(k)&&k>=1&&k<=v.length){var w=v[k-1];t[D(m)]=D(w),n[D(w)]=!0}}}}Object.keys(t).length>0&&(l._parentMappings=t)}}(e),fetch(x,{method:"POST",headers:A,body:JSON.stringify({data:l})})}).then(function(e){if(!e.ok)throw new Error("実データの保存に失敗しました");return e.json()}).then(function(e){var r=Array.isArray(e)?e[0].uuid:e.uuid;r?(localStorage.setItem(t,r),window.open("https://harug5152.github.io/ddr-flareskill-simulator/?id="+r,"_blank")):alert("UUID取得失敗")}).catch(function(e){alert("処理失敗: "+e.message)})}}else alert("フレアスキルデータが見つかりません。\nフレアスキルページで実行してください。");function D(e){return e.id||e.name+"::"+e.diff}}())</script>
+<script id="bml-source" type="text/plain">javascript:void(!function(){var e="https://harug5152.github.io/ddr-flareskill-simulator/",t="ddr_flare_uuid",a=[{theme:"theme-classic",name:"CLASSIC"},{theme:"theme-white",name:"WHITE"},{theme:"theme-gold",name:"GOLD"}],r=["BEGINNER","BASIC","DIFFICULT","EXPERT","CHALLENGE"];function l(e){if(!e)return 0;if(e.indexOf("flare_ex")>=0)return 10;var t=e.match(/flare_(\d+)/);return t?parseInt(t[1]):0}for(var n=location.href.indexOf("flare_data_double")>=0?"DP":"SP",i={CLASSIC:[],WHITE:[],GOLD:[]},d=0;d<a.length;d++){var o=a[d],s=document.querySelector("table."+o.theme);if(s)for(var u=s.querySelectorAll("tbody tr.data"),f=0;f<u.length;f++){var c=u[f],m=c.querySelector("td.chart .music-name"),h=m?(m.textContent||"").trim():"";if(h&&!(h.indexOf("Steps to the Star")>=0)){var v=c.querySelector("td.chart .diff");if(v){for(var g="",S=0;S<r.length;S++)if(v.classList.contains(r[S])){g=r[S];break}if(g){var I=v.querySelector(".level"),p=I?(I.textContent||"").match(/Lv\.?(\d+)/i):null,L=p?parseInt(p[1]):1,y=c.querySelector("td.flare-rank img"),C=l(y?y.src:""),E=c.querySelector("td.skill-value"),w=parseInt((E?E.textContent:"0")||"0")||0;i[o.name].push({name:h,diff:g,style:n,level:L,rankIdx:C,fs:w,date:"0000-00-00"})}}}}}if(0!==i.CLASSIC.length+i.WHITE.length+i.GOLD.length){var x=new URL(e).origin,q=window.open(e+"?import=actual","_blank");if(q){var _={type:"ddr-flare-actual-import",data:i,suggestedParentUuid:localStorage.getItem(t)||""},b=setInterval(function(){q.postMessage(_,x)},500);window.addEventListener("message",function e(a){a.origin===x&&a.data&&("ddr-flare-actual-import-ready"===a.data.type?clearInterval(b):"ddr-flare-actual-import-saved"===a.data.type&&a.data.uuid&&(localStorage.setItem(t,a.data.uuid),window.removeEventListener("message",e)))})}else alert("シミュレータ画面を開けませんでした。ポップアップを許可してください。")}else alert("フレアスキルデータが見つかりません。\nフレアスキルページで実行してください。")}())</script>
 </body>
 </html>
