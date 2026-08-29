@@ -67,6 +67,40 @@
     return;
   }
 
+  // ---- Optional parent connection ----
+  // 初回は保存済みシミュレーションのUUID/共有URLを貼り付ける。
+  // 保存成功後はこの公式サイト側のlocalStorageに子UUIDを記録し、
+  // 次回の実データ取得時に親候補として自動入力する。
+  var previousUuid = localStorage.getItem(LS_KEY) || '';
+  var parentInput = prompt(
+    '既存のバージョン履歴へ接続する場合は、親のUUIDまたは共有URLを入力してください。\n' +
+    '空欄の場合は独立した実データとして保存します。',
+    previousUuid
+  );
+  if (parentInput === null) return;
+  parentInput = parentInput.trim();
+  var parentUuid = '';
+  if (parentInput) {
+    try {
+      parentUuid = new URL(parentInput).searchParams.get('id') || '';
+    } catch (_) {
+      parentUuid = parentInput;
+    }
+    parentUuid = parentUuid.trim();
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(parentUuid)) {
+      alert('親UUIDまたは共有URLの形式が正しくありません。');
+      return;
+    }
+  }
+
+  var now = new Date();
+  var dateLabel = now.getFullYear() + '-' +
+    String(now.getMonth() + 1).padStart(2, '0') + '-' +
+    String(now.getDate()).padStart(2, '0');
+  result._recordType = 'actual';
+  result._title = dateLabel + ' 実データ';
+  if (parentUuid) result._parentUuid = parentUuid;
+
   // ---- Save to Supabase (INSERT only, immutable records) ----
   var url = SUPABASE_URL + '/rest/v1/skill_data';
   var headers = {
@@ -76,14 +110,32 @@
     'Prefer': 'return=representation',
   };
 
-  fetch(url, {
+  // 入力された親が実在することを確認してから子を保存する。
+  var verifyParent = parentUuid
+    ? fetch(url + '?uuid=eq.' + encodeURIComponent(parentUuid) + '&select=uuid&limit=1', {
+        headers: headers,
+      }).then(function(r) {
+        if (!r.ok) throw new Error('親データの確認に失敗しました');
+        return r.json();
+      }).then(function(rows) {
+        if (!Array.isArray(rows) || rows.length === 0) {
+          throw new Error('指定された親データが見つかりません');
+        }
+      })
+    : Promise.resolve();
+
+  verifyParent.then(function() { return fetch(url, {
     method: 'POST',
     headers: headers,
     body: JSON.stringify({data: result}),
-  }).then(function(r) { return r.json(); })
+  }); }).then(function(r) {
+    if (!r.ok) throw new Error('実データの保存に失敗しました');
+    return r.json();
+  })
   .then(function(d) {
     var uuid = Array.isArray(d) ? d[0].uuid : d.uuid;
     if (!uuid) { alert('UUID取得失敗'); return; }
+    localStorage.setItem(LS_KEY, uuid);
     window.open(SIMULATOR_URL + '?id=' + uuid, '_blank');
   }).catch(function(e) { alert('通信エラー: ' + e.message); });
 }());
