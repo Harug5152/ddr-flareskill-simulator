@@ -1199,7 +1199,7 @@ table.stats-tbl td.sv-dlt.neg { color: var(--tp-negative); }
       <div class="help-section">
         <h3>インポート方法</h3>
         <ul>
-          <li><strong>ブックマークレット</strong> — KONAMI の DDR World 公式 Web サイトにログインし、フレアスキル対象楽曲ページで実行します。既存履歴へ接続する場合は親のUUIDまたは共有URLを入力してください。作成した子UUIDは次回の親候補として自動入力されます。</li>
+          <li><strong>ブックマークレット</strong> — KONAMI の DDR World 公式 Web サイトにログインし、フレアスキル対象楽曲ページで実行します。既存履歴へ接続する場合は親のUUIDまたは共有URLを入力してください。省略名の新規計画曲がある場合は、続けて正式な実データ曲との対応候補を選択できます。作成した子UUIDは次回の親候補として自動入力されます。</li>
           <li><strong>JSON読込</strong> — 以前に「JSONとしてDL」で保存したファイルをインポートできます。</li>
         </ul>
       </div>
@@ -1403,6 +1403,7 @@ let showSimOut       = true;
 let simComment       = '';
 let simTitle         = ''; // シミュレーション名（30字以内・任意）
 let currentRecordType = 'simulation'; // 'simulation' | 'actual'
+let parentMappings   = {}; // 親SIM内の省略曲ID -> 子実データの正式曲ID
 const DEFAULT_PAGE_TITLE = document.title;
 let noteEdits        = {};   // {entryId: noteText}
 let currentNoteId    = null;
@@ -1524,6 +1525,11 @@ function renderTable(cat){
   const parentById=new Map(parentEntries.map(e=>[entryKey(e),e]));
   const plannedEntries=planMode?parentEntries.filter(e=>e._sim==='new'||e._sim==='mod'):[];
   const plannedById=new Map(plannedEntries.map(e=>[entryKey(e),e]));
+  const mappedPlanByActualId=new Map();
+  plannedEntries.forEach(e=>{
+    const mappedId=parentMappings[entryKey(e)];
+    if(mappedId) mappedPlanByActualId.set(mappedId,e);
+  });
   const baseline=planMode&&parentChain[1]?(parentChain[1].data||null):null;
   const baselineById=new Map((baseline?(baseline[cat]||[]):[]).map(e=>[entryKey(e),e]));
   const actualBaseIds=new Set(baseT30.map(e=>entryKey(e)));
@@ -1543,7 +1549,7 @@ function renderTable(cat){
     let bulkChk=false;
     const actualEntry=skillData[cat].find(x=>entryKey(x)===entryKey(e));
     const parentEntry=parentById.get(entryKey(e));
-    const planEntry=plannedById.get(entryKey(e));
+    const planEntry=plannedById.get(entryKey(e))||mappedPlanByActualId.get(entryKey(e));
     let progress='';
     if(planEntry&&actualEntry){
       if(actualEntry.rankIdx>=planEntry.rankIdx) progress='achieved';
@@ -1593,7 +1599,10 @@ function renderTable(cat){
       <td class="fsv">${e.fs}</td>
     </tr>`;
   });
-  if(showSimOut&&planMode) plannedEntries.filter(e=>!actualBaseIds.has(entryKey(e))).forEach(e=>{
+  if(showSimOut&&planMode) plannedEntries.filter(e=>{
+    const actualId=parentMappings[entryKey(e)]||entryKey(e);
+    return !actualBaseIds.has(actualId);
+  }).forEach(e=>{
     html+=`<tr class="plan-unmet plan-missing">
       <td class="pos">-</td>
       <td class="sname" title="${esc(e.name)}">${esc(e.name)}</td>
@@ -2315,13 +2324,14 @@ function renderParentSection(){
     return;
   }
   const results=plans.map(p=>{
-    const id=entryKey(p);
+    const mappedId=parentMappings[entryKey(p)];
+    const id=mappedId||entryKey(p);
     const match=(skillData[p.cat]||[]).find(x=>entryKey(x)===id);
     const baseMatch=baseline&&(baseline[p.cat]||[]).find(x=>entryKey(x)===id);
     let status='unmet';
     if(match&&match.rankIdx>=p.rankIdx) status='achieved';
     else if(match&&(p._sim==='new'||(baseMatch&&match.rankIdx>baseMatch.rankIdx))) status='partial';
-    return {plan:p,status};
+    return {plan:p,status,mappedName:mappedId&&match?match.name:''};
   });
   const done=results.filter(r=>r.status==='achieved').length;
   const partial=results.filter(r=>r.status==='partial').length;
@@ -2333,7 +2343,7 @@ function renderParentSection(){
     const mark=r.status==='achieved'?'✓':r.status==='partial'?'◐':'△';
     return `<div class="parent-ach-item ${itemCls}">`+
       `<span class="mark">${mark}</span>`+
-      `<span class="name">[${p.cat[0]}] ${esc(p.name)}</span>`+
+      `<span class="name">[${p.cat[0]}] ${esc(p.name)}${r.mappedName?' → '+esc(r.mappedName):''}</span>`+
       `<span class="info">${info}</span></div>`;
   }).join('');
   achEl.innerHTML=
@@ -2783,6 +2793,7 @@ async function loadFromSupabase(uuid){
   simComment=loaded._comment||'';
   simTitle=loaded._title||'';
   currentRecordType=recordTypeOf(loaded);
+  parentMappings=loaded._parentMappings||{};
   const ca=document.getElementById('sim-comment-area');
   if(ca){ca.value=simComment;onCommentInput(ca);}
   normalizeFsFields(skillData);
@@ -2898,6 +2909,7 @@ function downloadJSON(){
     exported_at:new Date().toISOString(),
     uuid:currentUUID||null,
     recordType:currentRecordType,
+    parentMappings:JSON.parse(JSON.stringify(parentMappings)),
     title:simTitle||null,
     skillData:JSON.parse(JSON.stringify(skillData)),
     candidateEntries:JSON.parse(JSON.stringify(candidateEntries)),
@@ -2932,6 +2944,7 @@ function importJSONFile(input){
       document.getElementById('import-status').textContent=`✓ JSON: ${file.name}`;
       simTitle=d.title||'';
       currentRecordType=d.recordType==='actual'?'actual':'simulation';
+      parentMappings=d.parentMappings||{};
       if(d.uuid){
         currentUUID=d.uuid;
         updateIdentityDisplay(d.uuid);
@@ -2976,6 +2989,6 @@ function goHome(){
   location.href=location.pathname;
 }
 </script>
-<script id="bml-source" type="text/plain">javascript:void(!function(){var e="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeHpncmtuanZ4dHZjdWt3bmdtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1ODM3MDMsImV4cCI6MjA4OTE1OTcwM30.UjWJWhI6g_j54qpr4okmwmGOna2bA33QGwULv1G-neM",t="ddr_flare_uuid",r=[{theme:"theme-classic",name:"CLASSIC"},{theme:"theme-white",name:"WHITE"},{theme:"theme-gold",name:"GOLD"}],a=["BEGINNER","BASIC","DIFFICULT","EXPERT","CHALLENGE"];function n(e){if(!e)return 0;if(e.indexOf("flare_ex")>=0)return 10;var t=e.match(/flare_(\d+)/);return t?parseInt(t[1]):0}for(var i=location.href.indexOf("flare_data_double")>=0?"DP":"SP",o={CLASSIC:[],WHITE:[],GOLD:[]},l=0;l<r.length;l++){var u=r[l],c=document.querySelector("table."+u.theme);if(c)for(var d=c.querySelectorAll("tbody tr.data"),f=0;f<d.length;f++){var h=d[f],s=h.querySelector("td.chart .music-name"),m=s?(s.textContent||"").trim():"";if(m&&!(m.indexOf("Steps to the Star")>=0)){var I=h.querySelector("td.chart .diff");if(I){for(var S="",p=0;p<a.length;p++)if(I.classList.contains(a[p])){S=a[p];break}if(S){var g=I.querySelector(".level"),v=g?(g.textContent||"").match(/Lv\.?(\d+)/i):null,y=v?parseInt(v[1]):1,C=h.querySelector("td.flare-rank img"),w=n(C?C.src:""),L=h.querySelector("td.skill-value"),k=parseInt((L?L.textContent:"0")||"0")||0;o[u.name].push({name:m,diff:S,style:i,level:y,rankIdx:w,fs:k,date:"0000-00-00"})}}}}}if(0!==o.CLASSIC.length+o.WHITE.length+o.GOLD.length){var O=localStorage.getItem(t)||"",U=prompt("既存のバージョン履歴へ接続する場合は、親のUUIDまたは共有URLを入力してください。\n空欄の場合は独立した実データとして保存します。",O);if(null!==U){var E="";if(U=U.trim()){try{E=new URL(U).searchParams.get("id")||""}catch(e){E=U}if(E=E.trim(),!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(E))return void alert("親UUIDまたは共有URLの形式が正しくありません。")}var b=new Date,A=b.getFullYear()+"-"+String(b.getMonth()+1).padStart(2,"0")+"-"+String(b.getDate()).padStart(2,"0");o._recordType="actual",o._title=A+" 実データ",E&&(o._parentUuid=E);var D="https://ddxzgrknjvxtvcukwngm.supabase.co/rest/v1/skill_data",_={"Content-Type":"application/json",apikey:e,Authorization:"Bearer "+e,Prefer:"return=representation"},x=E?fetch(D+"?uuid=eq."+encodeURIComponent(E)+"&select=uuid&limit=1",{headers:_}).then(function(e){if(!e.ok)throw new Error("親データの確認に失敗しました");return e.json()}).then(function(e){if(!Array.isArray(e)||0===e.length)throw new Error("指定された親データが見つかりません")}):Promise.resolve();x.then(function(){return fetch(D,{method:"POST",headers:_,body:JSON.stringify({data:o})})}).then(function(e){if(!e.ok)throw new Error("実データの保存に失敗しました");return e.json()}).then(function(e){var r=Array.isArray(e)?e[0].uuid:e.uuid;r?(localStorage.setItem(t,r),window.open("https://harug5152.github.io/ddr-flareskill-simulator/?id="+r,"_blank")):alert("UUID取得失敗")}).catch(function(e){alert("通信エラー: "+e.message)})}}else alert("フレアスキルデータが見つかりません。\nフレアスキルページで実行してください。")}())</script>
+<script id="bml-source" type="text/plain">javascript:void(!function(){var e="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRkeHpncmtuanZ4dHZjdWt3bmdtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM1ODM3MDMsImV4cCI6MjA4OTE1OTcwM30.UjWJWhI6g_j54qpr4okmwmGOna2bA33QGwULv1G-neM",t="ddr_flare_uuid",r=[{theme:"theme-classic",name:"CLASSIC"},{theme:"theme-white",name:"WHITE"},{theme:"theme-gold",name:"GOLD"}],n=["BEGINNER","BASIC","DIFFICULT","EXPERT","CHALLENGE"];function a(e){if(!e)return 0;if(e.indexOf("flare_ex")>=0)return 10;var t=e.match(/flare_(\d+)/);return t?parseInt(t[1]):0}for(var i=location.href.indexOf("flare_data_double")>=0?"DP":"SP",l={CLASSIC:[],WHITE:[],GOLD:[]},o=0;o<r.length;o++){var f=r[o],u=document.querySelector("table."+f.theme);if(u)for(var s=u.querySelectorAll("tbody tr.data"),c=0;c<s.length;c++){var d=s[c],h=d.querySelector("td.chart .music-name"),I=h?(h.textContent||"").trim():"";if(I&&!(I.indexOf("Steps to the Star")>=0)){var m=d.querySelector("td.chart .diff");if(m){for(var v="",p=0;p<n.length;p++)if(m.classList.contains(n[p])){v=n[p];break}if(v){var g=m.querySelector(".level"),S=g?(g.textContent||"").match(/Lv\.?(\d+)/i):null,y=S?parseInt(S[1]):1,k=d.querySelector("td.flare-rank img"),w=a(k?k.src:""),C=d.querySelector("td.skill-value"),L=parseInt((C?C.textContent:"0")||"0")||0;l[f.name].push({name:I,diff:v,style:i,level:y,rankIdx:w,fs:L,date:"0000-00-00"})}}}}}if(0!==l.CLASSIC.length+l.WHITE.length+l.GOLD.length){var b=localStorage.getItem(t)||"",E=prompt("既存のバージョン履歴へ接続する場合は、親のUUIDまたは共有URLを入力してください。\n空欄の場合は独立した実データとして保存します。",b);if(null!==E){var O="";if(E=E.trim()){try{O=new URL(E).searchParams.get("id")||""}catch(e){O=E}if(O=O.trim(),!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(O))return void alert("親UUIDまたは共有URLの形式が正しくありません。")}var U=new Date,_=U.getFullYear()+"-"+String(U.getMonth()+1).padStart(2,"0")+"-"+String(U.getDate()).padStart(2,"0");l._recordType="actual",l._title=_+" 実データ",O&&(l._parentUuid=O);var x="https://ddxzgrknjvxtvcukwngm.supabase.co/rest/v1/skill_data",A={"Content-Type":"application/json",apikey:e,Authorization:"Bearer "+e,Prefer:"return=representation"},M=O?fetch(x+"?uuid=eq."+encodeURIComponent(O)+"&select=uuid,data&limit=1",{headers:A}).then(function(e){if(!e.ok)throw new Error("親データの確認に失敗しました");return e.json()}).then(function(e){if(!Array.isArray(e)||0===e.length)throw new Error("指定された親データが見つかりません");return e[0].data||{}}):Promise.resolve(null);M.then(function(e){return function(e){if(e&&"actual"!==e._recordType){for(var t={},n={},a=["なし","I","II","III","IV","V","VI","VII","VIII","IX","EX"],i=0;i<r.length;i++){for(var o=r[i].name,f=e[o]||[],u=l[o]||[],s={},c=0;c<f.length;c++)s[D(f[c])]=!0;for(var d=u.filter(function(e){return!s[D(e)]}),h=f.filter(function(e){return"new"===e._sim&&!u.some(function(t){return D(t)===D(e)})}),I=0;I<h.length;I++){var m=h[I],v=d.filter(function(e){return!n[D(e)]}).sort(function(e,t){function r(e){return(e.diff===m.diff?0:1e4)+(e.style===m.style?0:3e3)+300*Math.abs((e.level||0)-(m.level||0))+30*Math.abs((e.rankIdx||0)-(m.rankIdx||0))+Math.abs((e.fs||0)-(m.fs||0))}return r(e)-r(t)}).slice(0,10);if(0!==v.length){for(var p=["省略名の計画曲を実データへ対応付けます。","","計画: ["+o+"] "+m.name+" / "+(m.diff||"?")+" / Lv"+(m.level||"?")+" / "+(a[m.rankIdx]||"?"),"","対応する実データの番号を入力してください。","0: 対応なし（通常の新規実績として扱う）"],g=0;g<v.length;g++){var S=v[g];p.push(g+1+": "+S.name+" / "+(S.diff||"?")+" / Lv"+(S.level||"?")+" / "+(a[S.rankIdx]||"?")+" / FS "+(S.fs||0))}var y=prompt(p.join("\n"),"0");if(null===y)throw new Error("対応付けをキャンセルしました");var k=parseInt(y,10);if(!isNaN(k)&&k>=1&&k<=v.length){var w=v[k-1];t[D(m)]=D(w),n[D(w)]=!0}}}}Object.keys(t).length>0&&(l._parentMappings=t)}}(e),fetch(x,{method:"POST",headers:A,body:JSON.stringify({data:l})})}).then(function(e){if(!e.ok)throw new Error("実データの保存に失敗しました");return e.json()}).then(function(e){var r=Array.isArray(e)?e[0].uuid:e.uuid;r?(localStorage.setItem(t,r),window.open("https://harug5152.github.io/ddr-flareskill-simulator/?id="+r,"_blank")):alert("UUID取得失敗")}).catch(function(e){alert("処理失敗: "+e.message)})}}else alert("フレアスキルデータが見つかりません。\nフレアスキルページで実行してください。");function D(e){return e.id||e.name+"::"+e.diff}}())</script>
 </body>
 </html>
